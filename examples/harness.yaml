@@ -1,0 +1,58 @@
+# Example harness config — a self-contained dummy that exercises every feature
+# and then terminates, so the harness can be tested end to end.
+#
+# Format:
+#   boot: a sequence of steps run in order. Each step is a mapping with:
+#     name       required string, unique. Later steps reference it as ${name.prop}.
+#     script     required string. Runs under `bash -c`. Use a '|' block scalar
+#                for multi-line scripts.
+#     lifecycle  optional, 'oneoff' (default) or 'keepalive'.
+#                - oneoff: runs to completion; any env it exports flows into
+#                  the following steps.
+#                - keepalive: started in the background and left running; the
+#                  harness kills it on teardown.
+#     port       (and any other extra key) becomes a resolved prop on the step,
+#                referenceable later as ${name.port}.
+#
+#   Token expansion inside ${...}:
+#     ${FREE_PORT}     a fresh free TCP port, allocated per occurrence.
+#     ${name.prop}     a prop from an earlier step (cross-step reference).
+#     ${prop}          a prop resolved earlier in THIS same step.
+
+boot:
+  # Two keepalive "tunnels" stand in for real port-forwards (no gcloud here,
+  # just a plain sleep). Each grabs a free port and prints it.
+  - name: db_tunnel
+    port: ${FREE_PORT}
+    lifecycle: keepalive
+    script: |
+      echo "db_tunnel listening on ${port}"
+      exec sleep 30
+
+  - name: cache_tunnel
+    port: ${FREE_PORT}
+    lifecycle: keepalive
+    script: |
+      echo "cache_tunnel listening on ${port}"
+      exec sleep 30
+
+  # A oneoff step that writes a config file and exports its path. The export
+  # survives into later steps because oneoff steps hand their env forward.
+  - name: secrets
+    script: |
+      export CFG_JSON_PATH=/tmp/harness-cfg.json
+      echo '{"feature":"demo","enabled":true}' > "$CFG_JSON_PATH"
+
+  # Build the app env from the tunnel ports resolved above. localhost because
+  # the keepalive tunnels forward to the local free ports.
+  - name: envs
+    script: |
+      export SQL_HOST="localhost"
+      export SQL_PORT=${db_tunnel.port}
+      export REDIS_HOST="localhost"
+      export REDIS_PORT=${cache_tunnel.port}
+
+  # The "app" — proves the exported vars resolved, then exits immediately so
+  # the harness runs to completion and tears the tunnels down.
+  - name: app_start
+    script: echo "app SQL_PORT=$SQL_PORT REDIS_PORT=$REDIS_PORT CFG=$CFG_JSON_PATH"

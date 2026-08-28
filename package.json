@@ -1,0 +1,24 @@
+{
+  "name": "node-harness",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "harness": "dist/harness.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --minify --platform=node --format=esm --target=node22 --outfile=dist/harness.js",
+    "typecheck": "tsc --noEmit",
+    "harness": "node dist/harness.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.1",
+    "typescript": "^7.0.0"
+  }
+}
