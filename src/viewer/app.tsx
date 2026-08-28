@@ -7,6 +7,7 @@ import { stepColor } from '../log.js';
 import { layout, type ViewEntry } from './layout.js';
 import { clamp, scrollBy, type ScrollState } from './scroll.js';
 import { MOUSE_DISABLE, MOUSE_ENABLE, parseMouse } from './mouse.js';
+import { dumpLines } from './dump.js';
 
 const BUFFER_CAP = 10000;
 const FLUSH_MS = 50;
@@ -14,6 +15,7 @@ const FLUSH_MS = 50;
 interface Feed {
   deliver?: (events: LogEvent[]) => void;
   backlog: LogEvent[];
+  lastFrame?: string[];
 }
 
 function toEntry(event: LogEvent, id: number): ViewEntry {
@@ -26,40 +28,49 @@ function App({ feed }: { feed: Feed }) {
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const [scroll, setScroll] = useState<ScrollState>({ scrollTop: 0, follow: true });
   const [size, setSize] = useState({ width: stdout.columns, height: stdout.rows });
+  const [paused, setPaused] = useState(false);
   const nextId = useRef(1);
   const pending = useRef<LogEvent[]>([]);
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
 
+  const viewHeight = paused ? Math.max(1, size.height - 1) : size.height;
   const rows = useMemo(
     () => layout(entries, expanded, size.width),
     [entries, expanded, size.width],
   );
-  const view = clamp(scroll, rows.length, size.height);
+  const view = clamp(scroll, rows.length, viewHeight);
   const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
 
   const live = useRef({
     rows,
     scrollTop: view.scrollTop,
     byId,
-    height: size.height,
+    height: viewHeight,
     width: size.width,
     expanded,
+    paused,
   });
   live.current = {
     rows,
     scrollTop: view.scrollTop,
     byId,
-    height: size.height,
+    height: viewHeight,
     width: size.width,
     expanded,
+    paused,
   };
 
   useEffect(() => {
-    feed.deliver = (events) => pending.current.push(...events);
+    feed.deliver = (events) => {
+      pending.current.push(...events);
+      if (pending.current.length > BUFFER_CAP) {
+        pending.current.splice(0, pending.current.length - BUFFER_CAP);
+      }
+    };
     feed.deliver(feed.backlog.splice(0));
     const timer = setInterval(() => {
-      if (pending.current.length === 0) return;
+      if (pending.current.length === 0 || live.current.paused) return;
       const fresh = pending.current.splice(0).map((event) => toEntry(event, nextId.current++));
       const merged = [...entriesRef.current, ...fresh];
       const dropped = merged.length > BUFFER_CAP ? merged.slice(0, merged.length - BUFFER_CAP) : [];
@@ -102,8 +113,13 @@ function App({ feed }: { feed: Feed }) {
   }, [stdout]);
 
   useEffect(() => {
+    process.stdout.write(paused ? MOUSE_DISABLE : MOUSE_ENABLE);
+  }, [paused]);
+
+  useEffect(() => {
     process.stdout.write(MOUSE_ENABLE);
     const onData = (chunk: Buffer | string) => {
+      if (live.current.paused) return;
       for (const action of parseMouse(String(chunk))) {
         if (action.kind === 'wheel') {
           setScroll((current) =>
@@ -136,11 +152,12 @@ function App({ feed }: { feed: Feed }) {
       process.kill(process.pid, 'SIGINT');
       return;
     }
-    const page = Math.max(1, size.height - 1);
-    if (key.upArrow) setScroll((current) => scrollBy(current, -1, rows.length, size.height));
-    else if (key.downArrow) setScroll((current) => scrollBy(current, 1, rows.length, size.height));
-    else if (key.pageUp) setScroll((current) => scrollBy(current, -page, rows.length, size.height));
-    else if (key.pageDown) setScroll((current) => scrollBy(current, page, rows.length, size.height));
+    const page = Math.max(1, viewHeight - 1);
+    if (input === ' ') setPaused((current) => !current);
+    else if (key.upArrow) setScroll((current) => scrollBy(current, -1, rows.length, viewHeight));
+    else if (key.downArrow) setScroll((current) => scrollBy(current, 1, rows.length, viewHeight));
+    else if (key.pageUp) setScroll((current) => scrollBy(current, -page, rows.length, viewHeight));
+    else if (key.pageDown) setScroll((current) => scrollBy(current, page, rows.length, viewHeight));
     else if (input === 'g' || key.home) setScroll({ scrollTop: 0, follow: false });
     else if (input === 'G' || key.end) setScroll({ scrollTop: Number.MAX_SAFE_INTEGER, follow: true });
   });
@@ -149,7 +166,8 @@ function App({ feed }: { feed: Feed }) {
     () => Math.max(7, ...entries.map((entry) => entry.step.length)) + 2,
     [entries],
   );
-  const visible = rows.slice(view.scrollTop, view.scrollTop + size.height);
+  const visible = rows.slice(view.scrollTop, view.scrollTop + viewHeight);
+  feed.lastFrame = dumpLines(visible, byId, expanded, pad);
 
   return (
     <Box flexDirection="column" width={size.width} height={size.height}>
@@ -186,6 +204,11 @@ function App({ feed }: { feed: Feed }) {
           </Text>
         );
       })}
+      {paused && (
+        <Text dimColor inverse wrap="truncate">
+          {' ⏸ paused — space resumes, mouse selection works normally '}
+        </Text>
+      )}
     </Box>
   );
 }
@@ -206,6 +229,9 @@ export function createInkSink(): Sink {
       process.stdout.write(MOUSE_DISABLE);
       instance.unmount();
       await instance.waitUntilExit();
+      if (feed.lastFrame && feed.lastFrame.length > 0) {
+        process.stderr.write(feed.lastFrame.join('\n') + '\n');
+      }
     },
   };
 }

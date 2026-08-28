@@ -41,10 +41,15 @@ disable colors or `FORCE_COLOR` to keep them when piping.
 When stdout and stdin are a terminal the harness runs a full-screen log viewer: every line
 is prefixed with its step name, and steps marked `logs: json` render each JSON
 line collapsed as `▸ <message>` (`msg` or `message` key; `level` colors the
-row). Click a row to expand the full record; mouse wheel or arrow keys scroll;
-scrolling up pauses auto-follow and scrolling back to the bottom (or `G`)
-resumes it; `g` jumps to the top; Ctrl+C tears everything down. Logs live only
-in the viewer — nothing is persisted.
+row). Click a row to expand or collapse the full record; mouse wheel or arrow
+keys scroll; scrolling up pauses auto-follow and scrolling back to the bottom
+(or `G`) resumes it; `g` jumps to the top; Ctrl+C tears everything down.
+
+Space pauses the viewer: rendering freezes and mouse reporting turns off, so
+text can be selected and copied normally (no Shift needed); space again resumes
+and buffered logs catch up. On exit the last visible screen — including any
+expanded records — is printed to the normal terminal, so the final state
+survives the alternate screen; nothing else is persisted.
 
 When stdout or stdin is not a terminal (pipe, CI) the harness prints prefixed lines
 instead, docker-compose style; JSON steps print just the message.
