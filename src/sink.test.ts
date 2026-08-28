@@ -39,3 +39,11 @@ test('system events go to stderr with harness prefix', () => {
   sink.event({ step: 'harness', stream: 'system', line: 'keepalive api started', ts: 0 });
   assert.equal(err.text(), 'harness  | keepalive api started\n');
 });
+
+test('close waits for pending writes to drain before resolving', async () => {
+  const out = capture();
+  const sink = new StreamSink(['api'], out.stream, capture().stream);
+  sink.event({ step: 'api', stream: 'stdout', line: 'hello', ts: 0 });
+  await sink.close();
+  assert.equal(out.text(), 'api      | hello\n');
+});

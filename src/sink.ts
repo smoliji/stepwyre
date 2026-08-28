@@ -26,6 +26,8 @@ export class StreamSink implements Sink {
   }
 
   close(): Promise<void> {
-    return Promise.resolve();
+    const drain = (stream: NodeJS.WritableStream) =>
+      new Promise<void>((resolve) => stream.write('', () => resolve()));
+    return Promise.all([drain(this.out), drain(this.err)]).then(() => undefined);
   }
 }
