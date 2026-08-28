@@ -53,17 +53,23 @@ function App({ feed }: { feed: Feed }) {
     [entries, expanded, size.width],
   );
   const view = clamp(scroll, rows.length, size.height);
+  const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
+
+  const live = useRef({ rows, scrollTop: view.scrollTop, byId, height: size.height });
+  live.current = { rows, scrollTop: view.scrollTop, byId, height: size.height };
 
   useEffect(() => {
     process.stdout.write(MOUSE_ENABLE);
     const onData = (chunk: Buffer | string) => {
       for (const action of parseMouse(String(chunk))) {
         if (action.kind === 'wheel') {
-          setScroll((current) => scrollBy(current, action.delta, rows.length, size.height));
+          setScroll((current) =>
+            scrollBy(current, action.delta, live.current.rows.length, live.current.height),
+          );
           continue;
         }
-        const row = rows[view.scrollTop + action.y];
-        const entry = row && entries.find((candidate) => candidate.id === row.entryId);
+        const row = live.current.rows[live.current.scrollTop + action.y];
+        const entry = row && live.current.byId.get(row.entryId);
         if (entry?.json) {
           setExpanded((current) => {
             const next = new Set(current);
@@ -79,7 +85,7 @@ function App({ feed }: { feed: Feed }) {
       process.stdin.off('data', onData);
       process.stdout.write(MOUSE_DISABLE);
     };
-  }, [rows, view.scrollTop, entries, size.height]);
+  }, []);
 
   useInput((input, key) => {
     if (input.includes('[<')) return;
@@ -101,7 +107,6 @@ function App({ feed }: { feed: Feed }) {
     [entries],
   );
   const visible = rows.slice(view.scrollTop, view.scrollTop + size.height);
-  const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
 
   return (
     <Box flexDirection="column" width={size.width} height={size.height}>
@@ -117,7 +122,13 @@ function App({ feed }: { feed: Feed }) {
         }
         const severity = entry.json?.severity;
         const color =
-          severity === 'error' ? 'red' : severity === 'warn' ? 'yellow' : undefined;
+          severity === 'error'
+            ? 'red'
+            : severity === 'warn'
+              ? 'yellow'
+              : entry.stream === 'stderr' && !entry.json
+                ? 'red'
+                : undefined;
         const arrow = entry.json ? (expanded.has(entry.id) ? '▾ ' : '▸ ') : '';
         return (
           <Text key={index} wrap="truncate">
