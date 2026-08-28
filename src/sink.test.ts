@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { StreamSink } from './sink.js';
 
+// hermetic: an ambient FORCE_COLOR would color the assertions below
+process.env.NO_COLOR = '1';
+delete process.env.FORCE_COLOR;
+
 function capture() {
   const stream = new PassThrough();
   const chunks: string[] = [];

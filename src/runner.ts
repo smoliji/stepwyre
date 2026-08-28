@@ -55,6 +55,8 @@ function attachOutput(child: ChildProcess, step: ResolvedStep, sink: Sink): void
 
 export async function runHarness(config: Config, sink: Sink): Promise<void> {
   let env = initialEnv();
+  // steps never get a TTY, so tell tools (pnpm, npm, ...) not to prompt
+  env.CI ??= 'true';
   const registry: Registry = {};
   const keepalive: ChildProcess[] = [];
   let current: ChildProcess | undefined;
@@ -102,7 +104,10 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
         continue;
       }
 
-      const child = spawn('bash', ['-c', resolved.script + '\nenv -0 >&3'], {
+      // capture the script's exit code before the env dump so a failing
+      // last command still fails the step; the variable is unexported and
+      // stays out of the captured env
+      const child = spawn('bash', ['-c', resolved.script + '\n__harness_exit=$?\nenv -0 >&3\nexit $__harness_exit'], {
         env,
         stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
         detached: true,

@@ -55,7 +55,10 @@ When stdout or stdin is not a terminal (pipe, CI) the harness prints prefixed li
 instead, docker-compose style; JSON steps print just the message.
 
 Step stdin is never connected to the terminal, so interactive child processes
-are not supported; when debugging, use the VS Code Debug Console.
+are not supported; when debugging, use the VS Code Debug Console. To keep
+tools like pnpm from waiting on prompts, steps run with `CI=true` unless the
+caller already set `CI`. A oneoff step fails the boot as soon as its script's
+last command exits non-zero — no explicit `exit` needed.
 
 Try it: `node dist/harness.js examples/tui-demo.yaml`
 

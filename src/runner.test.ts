@@ -20,6 +20,54 @@ test('non-TTY run prefixes child output and reports lifecycle events', async () 
   assert.match(stderr, /harness\s+\| oneoff envs done/);
 });
 
+async function configFile(dir: string, yaml: string): Promise<string> {
+  const path = join(dir, 'config.yaml');
+  await writeFile(path, yaml);
+  return path;
+}
+
+test('a oneoff whose last command fails aborts the boot with its exit code', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-fail-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      ['boot:', '  - name: bad', '    script: |', '      echo starting', '      false', '  - name: never', '    script: echo unreachable', ''].join('\n'),
+    );
+    const result = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
+      env: { ...process.env, NO_COLOR: '1' },
+      timeout: 30000,
+    }).catch((err: Error & { code?: number; stdout: string; stderr: string }) => err);
+    assert.ok(result instanceof Error, 'harness should exit non-zero');
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /step bad failed with code 1/);
+    assert.doesNotMatch(result.stdout, /unreachable/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('steps see CI=true unless the caller already set CI', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-ci-'));
+  try {
+    const cfgPath = await configFile(dir, 'boot:\n  - name: probe\n    script: echo "ci=$CI"\n');
+    const bare: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' };
+    delete bare.CI;
+    const defaulted = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
+      env: bare,
+      timeout: 30000,
+    });
+    assert.match(defaulted.stdout, /ci=true/);
+
+    const respected = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
+      env: { ...bare, CI: 'nope' },
+      timeout: 30000,
+    });
+    assert.match(respected.stdout, /ci=nope/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 async function pgrepFound(pattern: string): Promise<boolean> {
   try {
     const { stdout } = await run('pgrep', ['-f', pattern]);
