@@ -5,6 +5,7 @@ export interface ResolvedStep {
   name: string;
   script: string;
   lifecycle: Lifecycle;
+  logs: 'json' | undefined;
   props: Record<string, string>;
 }
 
@@ -151,6 +152,7 @@ export async function resolveStep(
     name: self.name!,
     script: self.script!,
     lifecycle: step.lifecycle,
+    logs: step.logs,
     props: self,
   };
 }

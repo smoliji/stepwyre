@@ -7,6 +7,7 @@ export interface BootStep {
   name: string;
   script: string;
   lifecycle: Lifecycle;
+  logs?: 'json';
   [key: string]: unknown;
 }
 
@@ -52,6 +53,10 @@ export function loadConfig(path: string): Config {
       throw new Error(
         `boot step '${name}' (${index}) has invalid lifecycle '${String(item.lifecycle)}'`,
       );
+    }
+
+    if (item.logs !== undefined && item.logs !== 'json') {
+      throw new Error(`boot step '${name}' (${index}) has invalid logs '${String(item.logs)}'`);
     }
 
     return item as BootStep;
