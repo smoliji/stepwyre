@@ -15,7 +15,7 @@ Set of files that make life of a Node.js developer easier in the following areas
 - Written in minimalistic TypeScript
 - Compiled to JS in dist folder
 - Development Node.js version 24
-- Prefers no-dependencies
+- Prefers minimal dependencies (ink + react are the only runtime deps, powering the log viewer)
 - Uses pnpm instead of npm
 - Contains examples folder for sample configuration
 - No comments in the code unless for examples, all code is beautifully readable
@@ -58,6 +58,7 @@ Harness configuration something like
 #   name: Type=String. Required.
 #   script: Type=String. Supports variable expansion. Required.
 #   lifecycle: Type=String, enum=[keepalive,oneoff]. Optional. Default oneoff.
+#   logs: Type=String, enum=[json]. Optional.
 #   [any_other_prop]: Type=Any. Optional.
 # }
 # Variable expansion:

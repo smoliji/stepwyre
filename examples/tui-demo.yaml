@@ -1,0 +1,30 @@
+# Demo for the full-screen log viewer. Run in a real terminal:
+#   node dist/harness.js examples/tui-demo.yaml
+# Two keepalive log producers (one JSON, one plain) plus a oneoff "app"
+# that keeps the harness alive for a minute.
+
+boot:
+  - name: api
+    lifecycle: keepalive
+    logs: json
+    script: |
+      i=0
+      while true; do
+        i=$((i+1))
+        level=30
+        if [ $((i % 7)) -eq 0 ]; then level=40; fi
+        if [ $((i % 11)) -eq 0 ]; then level=50; fi
+        echo "{\"level\":$level,\"time\":$(date +%s),\"msg\":\"request $i handled\",\"path\":\"/health\",\"i\":$i}"
+        sleep 0.7
+      done
+
+  - name: db
+    lifecycle: keepalive
+    script: |
+      while true; do
+        echo "LOG:  checkpoint complete at $(date +%T)"
+        sleep 2
+      done
+
+  - name: app
+    script: sleep 60

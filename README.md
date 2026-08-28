@@ -18,7 +18,8 @@ pnpm build
 ```
 
 Bundles `src/` into a single minified file `dist/harness.js` via esbuild. Type checking is
-separate: `pnpm typecheck` runs `tsc --noEmit`.
+separate: `pnpm typecheck` runs `tsc --noEmit`. The bundle externalizes `ink` and `react`
+dependencies, so `node_modules` must be present alongside the built file to run the harness.
 
 ## Run
 
@@ -34,6 +35,24 @@ tears down any keepalive children before exiting.
 
 Progress lines go to stderr and are colored when it is a terminal. Set `NO_COLOR` to
 disable colors or `FORCE_COLOR` to keep them when piping.
+
+## Log viewer
+
+When stdout is a terminal the harness runs a full-screen log viewer: every line
+is prefixed with its step name, and steps marked `logs: json` render each JSON
+line collapsed as `▸ <message>` (`msg` or `message` key; `level` colors the
+row). Click a row to expand the full record; mouse wheel or arrow keys scroll;
+scrolling up pauses auto-follow and scrolling back to the bottom (or `G`)
+resumes it; `g` jumps to the top; Ctrl+C tears everything down. Logs live only
+in the viewer — nothing is persisted.
+
+When stdout is not a terminal (pipe, CI) the harness prints prefixed lines
+instead, docker-compose style; JSON steps print just the message.
+
+Step stdin is never connected to the terminal, so interactive child processes
+are not supported; when debugging, use the VS Code Debug Console.
+
+Try it: `node dist/harness.js examples/tui-demo.yaml`
 
 ## Config format
 
