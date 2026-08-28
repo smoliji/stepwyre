@@ -1,28 +1,23 @@
 import { styleText } from 'node:util';
 import process from 'node:process';
 
-type Format = Parameters<typeof styleText>[0];
+export type Format = Parameters<typeof styleText>[0];
 
 const enabled =
   process.env.NO_COLOR === undefined &&
   (process.env.FORCE_COLOR !== undefined || process.stderr.isTTY === true);
 
-const paint = (format: Format, text: string): string => (enabled ? styleText(format, text) : text);
+export const paint = (format: Format, text: string): string =>
+  enabled ? styleText(format, text) : text;
 
-const prefix = paint('dim', '[harness]');
+const palette: Format[] = ['cyan', 'magenta', 'green', 'yellow', 'blue', 'red'];
 
-const eventColor: Record<string, Format> = {
-  keepalive: 'magenta',
-  oneoff: 'cyan',
-};
-
-export function logStep(event: string, name: string, status: string): void {
-  const tag = paint(eventColor[event] ?? 'blue', event);
-  const label = paint('bold', name);
-  const state = paint('green', status);
-  process.stderr.write(`${prefix} ${tag} ${label} ${state}\n`);
+export function stepColor(step: string): Format {
+  let hash = 0;
+  for (const char of step) hash = (hash * 31 + char.codePointAt(0)!) >>> 0;
+  return palette[hash % palette.length]!;
 }
 
 export function logError(message: string): void {
-  process.stderr.write(`${prefix} ${paint('red', message)}\n`);
+  process.stderr.write(`${paint('dim', '[harness]')} ${paint('red', message)}\n`);
 }
