@@ -57,6 +57,9 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
   let env = initialEnv();
   // steps never get a TTY, so tell tools (pnpm, npm, ...) not to prompt
   env.CI ??= 'true';
+  // children can detect they run under a harness (a nested harness switches
+  // its StreamSink to raw json passthrough)
+  env.NESTED ??= '1';
   const registry: Registry = {};
   const keepalive: ChildProcess[] = [];
   let current: ChildProcess | undefined;

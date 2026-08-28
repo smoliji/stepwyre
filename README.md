@@ -54,6 +54,12 @@ survives the alternate screen; nothing else is persisted.
 When stdout or stdin is not a terminal (pipe, CI) the harness prints prefixed lines
 instead, docker-compose style; JSON steps print just the message.
 
+Harnesses nest: steps run with `NESTED=1` set, and a harness that finds
+`NESTED` in its own environment passes `logs: json` lines through raw and
+unprefixed, so an outer harness step marked `logs: json` can parse and
+collapse them in its viewer. Inner step names are not forwarded — the outer
+step's prefix wins.
+
 Step stdin is never connected to the terminal, so interactive child processes
 are not supported; when debugging, use the VS Code Debug Console. To keep
 tools like pnpm from waiting on prompts, steps run with `CI=true` unless the

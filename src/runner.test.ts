@@ -49,14 +49,18 @@ test('a oneoff whose last command fails aborts the boot with its exit code', asy
 test('steps see CI=true unless the caller already set CI', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'harness-ci-'));
   try {
-    const cfgPath = await configFile(dir, 'boot:\n  - name: probe\n    script: echo "ci=$CI"\n');
+    const cfgPath = await configFile(
+      dir,
+      'boot:\n  - name: probe\n    script: echo "ci=$CI nested=$NESTED"\n',
+    );
     const bare: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' };
     delete bare.CI;
+    delete bare.NESTED;
     const defaulted = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
       env: bare,
       timeout: 30000,
     });
-    assert.match(defaulted.stdout, /ci=true/);
+    assert.match(defaulted.stdout, /ci=true nested=1/);
 
     const respected = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
       env: { ...bare, CI: 'nope' },

@@ -15,10 +15,16 @@ if (configPaths.length === 0) {
 
 async function main(paths: string[]): Promise<void> {
   const config = loadConfigs(paths);
+  const nested = process.env.NESTED !== undefined && process.env.NESTED !== '';
   const sink: Sink =
     process.stdout.isTTY && process.stdin.isTTY
       ? createInkSink()
-      : new StreamSink(config.boot.map((step) => step.name));
+      : new StreamSink(
+          config.boot.map((step) => step.name),
+          process.stdout,
+          process.stderr,
+          nested,
+        );
   try {
     await runHarness(config, sink);
     await sink.close();

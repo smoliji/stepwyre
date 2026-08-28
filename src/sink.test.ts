@@ -44,6 +44,29 @@ test('system events go to stderr with harness prefix', () => {
   assert.equal(err.text(), 'harness  | keepalive api started\n');
 });
 
+test('nested sink passes json lines through raw, unprefixed', () => {
+  const out = capture();
+  const sink = new StreamSink(['api'], out.stream, capture().stream, true);
+  sink.event({
+    step: 'api',
+    stream: 'stdout',
+    line: '{"msg":"listening","level":30}',
+    ts: 0,
+    json: { message: 'listening', severity: 'info', pretty: '{}' },
+  });
+  assert.equal(out.text(), '{"msg":"listening","level":30}\n');
+});
+
+test('nested sink keeps prefixes on non-json lines', () => {
+  const out = capture();
+  const err = capture();
+  const sink = new StreamSink(['api'], out.stream, err.stream, true);
+  sink.event({ step: 'api', stream: 'stdout', line: 'plain', ts: 0 });
+  sink.event({ step: 'harness', stream: 'system', line: 'oneoff env done', ts: 0 });
+  assert.equal(out.text(), 'api      | plain\n');
+  assert.equal(err.text(), 'harness  | oneoff env done\n');
+});
+
 test('close waits for pending writes to drain before resolving', async () => {
   const out = capture();
   const sink = new StreamSink(['api'], out.stream, capture().stream);
