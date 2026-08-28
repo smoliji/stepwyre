@@ -4,6 +4,7 @@ import { loadConfigs } from './config.js';
 import { runHarness } from './runner.js';
 import { logError } from './log.js';
 import { StreamSink, type Sink } from './sink.js';
+import { createInkSink } from './viewer/app.js';
 
 const configPaths = process.argv.slice(2);
 
@@ -14,7 +15,9 @@ if (configPaths.length === 0) {
 
 async function main(paths: string[]): Promise<void> {
   const config = loadConfigs(paths);
-  const sink: Sink = new StreamSink(config.boot.map((step) => step.name));
+  const sink: Sink = process.stdout.isTTY
+    ? createInkSink()
+    : new StreamSink(config.boot.map((step) => step.name));
   try {
     await runHarness(config, sink);
     await sink.close();
