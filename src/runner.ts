@@ -2,8 +2,10 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import process from 'node:process';
 import type { Readable } from 'node:stream';
 import type { Config } from './config.js';
-import { resolveStep, type Registry } from './expand.js';
-import { logStep } from './log.js';
+import { resolveStep, type ResolvedStep, type Registry } from './expand.js';
+import { LineSplitter, type LogEvent } from './events.js';
+import { parseJsonLog } from './jsonLog.js';
+import type { Sink } from './sink.js';
 
 function initialEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -27,10 +29,38 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function runHarness(config: Config): Promise<void> {
+function attachOutput(child: ChildProcess, step: ResolvedStep, sink: Sink): void {
+  const wire = (readable: Readable | null, stream: 'stdout' | 'stderr') => {
+    if (!readable) return;
+    const splitter = new LineSplitter();
+    const emit = (line: string) => {
+      const event: LogEvent = { step: step.name, stream, line, ts: Date.now() };
+      if (step.logs === 'json') {
+        const json = parseJsonLog(line);
+        if (json) event.json = json;
+      }
+      sink.event(event);
+    };
+    readable.setEncoding('utf8');
+    readable.on('data', (chunk: string) => {
+      for (const line of splitter.push(chunk)) emit(line);
+    });
+    readable.once('close', () => {
+      for (const line of splitter.flush()) emit(line);
+    });
+  };
+  wire(child.stdout, 'stdout');
+  wire(child.stderr, 'stderr');
+}
+
+export async function runHarness(config: Config, sink: Sink): Promise<void> {
   let env = initialEnv();
   const registry: Registry = {};
   const keepalive: ChildProcess[] = [];
+
+  const system = (line: string) => {
+    sink.event({ step: 'harness', stream: 'system', line, ts: Date.now() });
+  };
 
   const teardown = () => {
     for (const child of keepalive) {
@@ -41,14 +71,13 @@ export async function runHarness(config: Config): Promise<void> {
     }
   };
 
-  process.once('SIGINT', () => {
+  const exitOnSignal = (code: number) => {
     teardown();
-    process.exit(130);
-  });
-  process.once('SIGTERM', () => {
-    teardown();
-    process.exit(143);
-  });
+    void sink.close().then(() => process.exit(code));
+  };
+
+  process.once('SIGINT', () => exitOnSignal(130));
+  process.once('SIGTERM', () => exitOnSignal(143));
 
   try {
     for (const step of config.boot) {
@@ -58,18 +87,20 @@ export async function runHarness(config: Config): Promise<void> {
       if (resolved.lifecycle === 'keepalive') {
         const child = spawn('bash', ['-c', resolved.script], {
           env,
-          stdio: 'inherit',
+          stdio: ['ignore', 'pipe', 'pipe'],
           detached: true,
         });
+        attachOutput(child, resolved, sink);
         keepalive.push(child);
-        logStep('keepalive', resolved.name, 'started');
+        system(`keepalive ${resolved.name} started`);
         continue;
       }
 
       const child = spawn('bash', ['-c', resolved.script + '\nenv -0 >&3'], {
         env,
-        stdio: ['inherit', 'inherit', 'inherit', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
       });
+      attachOutput(child, resolved, sink);
       const envPipe = child.stdio[3] as Readable | null;
       const chunks: Buffer[] = [];
       // a backgrounded grandchild can inherit fd 3 and keep the pipe open
@@ -92,7 +123,7 @@ export async function runHarness(config: Config): Promise<void> {
       }
       const captured = parseEnvDump(dump);
       if (Object.keys(captured).length > 0) env = captured;
-      logStep('oneoff', resolved.name, 'done');
+      system(`oneoff ${resolved.name} done`);
     }
   } finally {
     teardown();

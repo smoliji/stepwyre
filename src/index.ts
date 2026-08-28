@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import process from 'node:process';
 import { loadConfigs } from './config.js';
 import { runHarness } from './runner.js';
 import { logError } from './log.js';
+import { StreamSink, type Sink } from './sink.js';
 
 const configPaths = process.argv.slice(2);
 
@@ -11,7 +13,15 @@ if (configPaths.length === 0) {
 }
 
 async function main(paths: string[]): Promise<void> {
-  await runHarness(loadConfigs(paths));
+  const config = loadConfigs(paths);
+  const sink: Sink = new StreamSink(config.boot.map((step) => step.name));
+  try {
+    await runHarness(config, sink);
+    await sink.close();
+  } catch (err) {
+    await sink.close();
+    throw err;
+  }
 }
 
 main(configPaths).catch((err) => {
