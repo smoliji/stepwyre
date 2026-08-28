@@ -57,6 +57,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
   let env = initialEnv();
   const registry: Registry = {};
   const keepalive: ChildProcess[] = [];
+  let current: ChildProcess | undefined;
 
   const system = (line: string) => {
     sink.event({ step: 'harness', stream: 'system', line, ts: Date.now() });
@@ -67,6 +68,11 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
       if (child.pid === undefined) continue;
       try {
         process.kill(-child.pid, 'SIGTERM');
+      } catch {}
+    }
+    if (current?.pid !== undefined) {
+      try {
+        process.kill(-current.pid, 'SIGTERM');
       } catch {}
     }
   };
@@ -99,7 +105,9 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
       const child = spawn('bash', ['-c', resolved.script + '\nenv -0 >&3'], {
         env,
         stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
+        detached: true,
       });
+      current = child;
       attachOutput(child, resolved, sink);
       const envPipe = child.stdio[3] as Readable | null;
       const chunks: Buffer[] = [];
@@ -115,6 +123,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
       const code = await new Promise<number | null>((resolve) => {
         child.once('exit', (exitCode) => resolve(exitCode));
       });
+      current = undefined;
       await Promise.race([pipeDone, delay(200)]);
       envPipe?.destroy();
       const dump = Buffer.concat(chunks).toString('utf8');

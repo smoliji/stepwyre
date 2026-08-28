@@ -3,12 +3,15 @@ import process from 'node:process';
 
 export type Format = Parameters<typeof styleText>[0];
 
-const enabled =
-  process.env.NO_COLOR === undefined &&
-  (process.env.FORCE_COLOR !== undefined || process.stderr.isTTY === true);
+export function colorEnabled(stream: { isTTY?: boolean }): boolean {
+  return (
+    process.env.NO_COLOR === undefined &&
+    (process.env.FORCE_COLOR !== undefined || stream.isTTY === true)
+  );
+}
 
 export const paint = (format: Format, text: string): string =>
-  enabled ? styleText(format, text) : text;
+  colorEnabled(process.stderr) ? styleText(format, text) : text;
 
 const palette: Format[] = ['cyan', 'magenta', 'green', 'yellow', 'blue', 'red'];
 

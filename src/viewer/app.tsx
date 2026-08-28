@@ -28,6 +28,32 @@ function App({ feed }: { feed: Feed }) {
   const [size, setSize] = useState({ width: stdout.columns, height: stdout.rows });
   const nextId = useRef(1);
   const pending = useRef<LogEvent[]>([]);
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+
+  const rows = useMemo(
+    () => layout(entries, expanded, size.width),
+    [entries, expanded, size.width],
+  );
+  const view = clamp(scroll, rows.length, size.height);
+  const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
+
+  const live = useRef({
+    rows,
+    scrollTop: view.scrollTop,
+    byId,
+    height: size.height,
+    width: size.width,
+    expanded,
+  });
+  live.current = {
+    rows,
+    scrollTop: view.scrollTop,
+    byId,
+    height: size.height,
+    width: size.width,
+    expanded,
+  };
 
   useEffect(() => {
     feed.deliver = (events) => pending.current.push(...events);
@@ -35,7 +61,34 @@ function App({ feed }: { feed: Feed }) {
     const timer = setInterval(() => {
       if (pending.current.length === 0) return;
       const fresh = pending.current.splice(0).map((event) => toEntry(event, nextId.current++));
-      setEntries((current) => [...current, ...fresh].slice(-BUFFER_CAP));
+      const merged = [...entriesRef.current, ...fresh];
+      const dropped = merged.length > BUFFER_CAP ? merged.slice(0, merged.length - BUFFER_CAP) : [];
+      const next = dropped.length > 0 ? merged.slice(-BUFFER_CAP) : merged;
+      entriesRef.current = next;
+      setEntries(next);
+
+      if (dropped.length === 0) return;
+      const droppedIds = new Set(dropped.map((entry) => entry.id));
+      const expandedAtDrop = live.current.expanded;
+      setExpanded((current) => {
+        let changed = false;
+        for (const id of droppedIds) {
+          if (current.has(id)) {
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) return current;
+        const pruned = new Set(current);
+        for (const id of droppedIds) pruned.delete(id);
+        return pruned;
+      });
+      const droppedRows = layout(dropped, expandedAtDrop, live.current.width).length;
+      setScroll((current) =>
+        current.follow
+          ? current
+          : { scrollTop: Math.max(0, current.scrollTop - droppedRows), follow: false },
+      );
     }, FLUSH_MS);
     return () => clearInterval(timer);
   }, [feed]);
@@ -47,16 +100,6 @@ function App({ feed }: { feed: Feed }) {
       stdout.off('resize', onResize);
     };
   }, [stdout]);
-
-  const rows = useMemo(
-    () => layout(entries, expanded, size.width),
-    [entries, expanded, size.width],
-  );
-  const view = clamp(scroll, rows.length, size.height);
-  const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
-
-  const live = useRef({ rows, scrollTop: view.scrollTop, byId, height: size.height });
-  live.current = { rows, scrollTop: view.scrollTop, byId, height: size.height };
 
   useEffect(() => {
     process.stdout.write(MOUSE_ENABLE);
@@ -98,8 +141,8 @@ function App({ feed }: { feed: Feed }) {
     else if (key.downArrow) setScroll((current) => scrollBy(current, 1, rows.length, size.height));
     else if (key.pageUp) setScroll((current) => scrollBy(current, -page, rows.length, size.height));
     else if (key.pageDown) setScroll((current) => scrollBy(current, page, rows.length, size.height));
-    else if (input === 'g') setScroll({ scrollTop: 0, follow: false });
-    else if (input === 'G') setScroll({ scrollTop: Number.MAX_SAFE_INTEGER, follow: true });
+    else if (input === 'g' || key.home) setScroll({ scrollTop: 0, follow: false });
+    else if (input === 'G' || key.end) setScroll({ scrollTop: Number.MAX_SAFE_INTEGER, follow: true });
   });
 
   const pad = useMemo(

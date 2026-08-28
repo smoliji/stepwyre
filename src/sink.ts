@@ -1,6 +1,7 @@
+import { styleText } from 'node:util';
 import process from 'node:process';
 import type { LogEvent } from './events.js';
-import { paint, stepColor } from './log.js';
+import { colorEnabled, stepColor } from './log.js';
 
 export interface Sink {
   event(event: LogEvent): void;
@@ -12,16 +13,17 @@ export class StreamSink implements Sink {
 
   constructor(
     stepNames: string[],
-    private out: NodeJS.WritableStream = process.stdout,
-    private err: NodeJS.WritableStream = process.stderr,
+    private out: NodeJS.WritableStream & { isTTY?: boolean } = process.stdout,
+    private err: NodeJS.WritableStream & { isTTY?: boolean } = process.stderr,
   ) {
     this.pad = Math.max(...['harness', ...stepNames].map((name) => name.length)) + 2;
   }
 
   event(event: LogEvent): void {
-    const prefix = paint(stepColor(event.step), event.step.padEnd(this.pad));
-    const text = event.json ? event.json.message : event.line;
     const target = event.stream === 'stdout' ? this.out : this.err;
+    const padded = event.step.padEnd(this.pad);
+    const prefix = colorEnabled(target) ? styleText(stepColor(event.step), padded) : padded;
+    const text = event.json ? event.json.message : event.line;
     target.write(`${prefix}| ${text}\n`);
   }
 
