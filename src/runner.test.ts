@@ -51,22 +51,76 @@ test('steps see CI=true unless the caller already set CI', async () => {
   try {
     const cfgPath = await configFile(
       dir,
-      'boot:\n  - name: probe\n    script: echo "ci=$CI nested=$NESTED"\n',
+      'boot:\n  - name: probe\n    script: echo "ci=$CI logs_json=$LOGS_JSON"\n',
     );
     const bare: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' };
     delete bare.CI;
-    delete bare.NESTED;
+    delete bare.LOGS_JSON;
     const defaulted = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
       env: bare,
       timeout: 30000,
     });
-    assert.match(defaulted.stdout, /ci=true nested=1/);
+    assert.match(defaulted.stdout, /ci=true logs_json=1/);
 
     const respected = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
       env: { ...bare, CI: 'nope' },
       timeout: 30000,
     });
     assert.match(respected.stdout, /ci=nope/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('nested harness envelopes compose step names in the outer sink', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-nested-'));
+  try {
+    const innerPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: app',
+        '    logs: json',
+        '    script: |',
+        '      echo \'{"level":30,"msg":"tick one"}\'',
+        '      echo plain banner',
+        '',
+      ].join('\n'),
+    );
+    const outerCfg = [
+      'boot:',
+      '  - name: sub',
+      `    script: ${process.execPath} --import tsx src/index.ts ${innerPath}`,
+      '',
+    ].join('\n');
+    const { writeFile: write } = await import('node:fs/promises');
+    const outerPath = join(dir, 'outer.yaml');
+    await write(outerPath, outerCfg);
+
+    const bare: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' };
+    delete bare.LOGS_JSON;
+
+    const stream = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', outerPath], {
+      env: bare,
+      timeout: 30000,
+    });
+    assert.match(stream.stdout, /sub\/app\s+\| tick one/);
+    assert.match(stream.stdout, /sub\/app\s+\| plain banner/);
+    assert.match(stream.stderr, /sub\/harness\s+\| oneoff app done/);
+
+    const machine = await run(
+      process.execPath,
+      ['--import', 'tsx', 'src/index.ts', '--json', outerPath],
+      { env: bare, timeout: 30000 },
+    );
+    const envelopes = machine.stdout
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const tick = envelopes.find((candidate) => candidate.step === 'sub/app' && candidate.json === true);
+    assert.ok(tick, 'expected a json-flagged envelope from the nested step');
+    assert.equal(tick.line, '{"level":30,"msg":"tick one"}');
+    assert.ok(envelopes.every((candidate) => candidate['@log'] === 1));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

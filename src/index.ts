@@ -4,27 +4,26 @@ import { loadConfigs } from './config.js';
 import { runHarness } from './runner.js';
 import { logError } from './log.js';
 import { StreamSink, type Sink } from './sink.js';
+import { JsonSink } from './jsonSink.js';
 import { createInkSink } from './viewer/app.js';
 
-const configPaths = process.argv.slice(2);
+const args = process.argv.slice(2);
+const jsonMode =
+  args.includes('--json') || (process.env.LOGS_JSON !== undefined && process.env.LOGS_JSON !== '');
+const configPaths = args.filter((arg) => arg !== '--json');
 
 if (configPaths.length === 0) {
-  console.error('usage: harness <config.yaml> [config2.yaml ...]');
+  console.error('usage: harness [--json] <config.yaml> [config2.yaml ...]');
   process.exit(1);
 }
 
 async function main(paths: string[]): Promise<void> {
   const config = loadConfigs(paths);
-  const nested = process.env.NESTED !== undefined && process.env.NESTED !== '';
-  const sink: Sink =
-    process.stdout.isTTY && process.stdin.isTTY
+  const sink: Sink = jsonMode
+    ? new JsonSink()
+    : process.stdout.isTTY && process.stdin.isTTY
       ? createInkSink()
-      : new StreamSink(
-          config.boot.map((step) => step.name),
-          process.stdout,
-          process.stderr,
-          nested,
-        );
+      : new StreamSink(config.boot.map((step) => step.name));
   try {
     await runHarness(config, sink);
     await sink.close();

@@ -5,6 +5,7 @@ import type { Config } from './config.js';
 import { resolveStep, type ResolvedStep, type Registry } from './expand.js';
 import { LineSplitter, type LogEvent } from './events.js';
 import { parseJsonLog } from './jsonLog.js';
+import { parseEnvelope } from './jsonSink.js';
 import type { Sink } from './sink.js';
 
 function initialEnv(): Record<string, string> {
@@ -34,6 +35,23 @@ function attachOutput(child: ChildProcess, step: ResolvedStep, sink: Sink): void
     if (!readable) return;
     const splitter = new LineSplitter();
     const emit = (line: string) => {
+      // a nested harness emits envelopes — unwrap them so the child's step
+      // names compose with ours (userapi/start) and json records survive
+      const wrapped = parseEnvelope(line);
+      if (wrapped) {
+        const event: LogEvent = {
+          step: `${step.name}/${wrapped.step}`,
+          stream: wrapped.stream,
+          line: wrapped.line,
+          ts: wrapped.ts,
+        };
+        if (wrapped.json) {
+          const json = parseJsonLog(wrapped.line);
+          if (json) event.json = json;
+        }
+        sink.event(event);
+        return;
+      }
       const event: LogEvent = { step: step.name, stream, line, ts: Date.now() };
       if (step.logs === 'json') {
         const json = parseJsonLog(line);
@@ -57,9 +75,9 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
   let env = initialEnv();
   // steps never get a TTY, so tell tools (pnpm, npm, ...) not to prompt
   env.CI ??= 'true';
-  // children can detect they run under a harness (a nested harness switches
-  // its StreamSink to raw json passthrough)
-  env.NESTED ??= '1';
+  // a nested harness detects this and emits NDJSON envelopes instead of
+  // human output, so step names and json records survive the pipe
+  env.LOGS_JSON ??= '1';
   const registry: Registry = {};
   const keepalive: ChildProcess[] = [];
   let current: ChildProcess | undefined;

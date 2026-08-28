@@ -54,11 +54,16 @@ survives the alternate screen; nothing else is persisted.
 When stdout or stdin is not a terminal (pipe, CI) the harness prints prefixed lines
 instead, docker-compose style; JSON steps print just the message.
 
-Harnesses nest: steps run with `NESTED=1` set, and a harness that finds
-`NESTED` in its own environment passes `logs: json` lines through raw and
-unprefixed, so an outer harness step marked `logs: json` can parse and
-collapse them in its viewer. Inner step names are not forwarded — the outer
-step's prefix wins.
+`--json` switches to machine output: no viewer, every event printed to stdout
+as one NDJSON envelope `{"@log":1,"step":...,"stream":...,"ts":...,"line":...,
+"json":true|false}` (`json` marks lines of `logs: json` steps that parsed).
+Useful for scripts and agents: `harness --json cfg.yaml | jq 'select(.json)'`.
+
+Harnesses nest through the same protocol: steps run with `LOGS_JSON=1` set,
+which makes a nested harness emit envelopes, and the outer harness unwraps
+them — step names compose (`userapi/start`), streams and json records survive,
+and the viewer shows nested steps with their own prefixes and collapsible
+records. No `logs: json` needed on the step that runs the nested harness.
 
 Step stdin is never connected to the terminal, so interactive child processes
 are not supported; when debugging, use the VS Code Debug Console. To keep

@@ -15,20 +15,15 @@ export class StreamSink implements Sink {
     stepNames: string[],
     private out: NodeJS.WritableStream & { isTTY?: boolean } = process.stdout,
     private err: NodeJS.WritableStream & { isTTY?: boolean } = process.stderr,
-    private nested = false,
   ) {
     this.pad = Math.max(...['harness', ...stepNames].map((name) => name.length)) + 2;
   }
 
   event(event: LogEvent): void {
     const target = event.stream === 'stdout' ? this.out : this.err;
-    // nested under another harness: json lines pass through raw so the
-    // outer harness can parse them; a prefix would break that
-    if (this.nested && event.json) {
-      target.write(`${event.line}\n`);
-      return;
-    }
-    const padded = event.step.padEnd(this.pad);
+    // composed nested names (sub/step) can outgrow the pad — keep a separator
+    const padded =
+      event.step.length >= this.pad ? `${event.step} ` : event.step.padEnd(this.pad);
     const prefix = colorEnabled(target) ? styleText(stepColor(event.step), padded) : padded;
     const text = event.json ? event.json.message : event.line;
     target.write(`${prefix}| ${text}\n`);
