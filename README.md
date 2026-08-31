@@ -1,9 +1,16 @@
-# node-harness
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/lockup-dark.svg">
+    <img src="brand/lockup-light.svg" alt="stepwyre" width="360">
+  </picture>
+</p>
+<p align="center"><em>Wire your stack, step by step.</em></p>
 
-A minimal TypeScript harness that reads a YAML config and runs an ordered list of
-boot steps. Each step runs a bash script; steps can allocate free TCP ports,
-export environment into later steps, and stay alive in the background as long-running
-services. Written against Node 24 with no runtime dependencies (Node builtins only).
+stepwyre is a small boot orchestrator written in TypeScript. It reads a YAML config
+and runs an ordered list of boot steps. Each step runs a bash script. A step can
+allocate free TCP ports. A step can export environment variables to the steps that
+follow. A step can stay alive in the background as a service. stepwyre runs on
+Node 24 and uses only Node builtins at runtime.
 
 ## Install
 
@@ -17,9 +24,10 @@ pnpm install
 pnpm build
 ```
 
-Bundles `src/` into a single minified file `dist/harness.js` via esbuild. Type checking is
-separate: `pnpm typecheck` runs `tsc --noEmit`. The bundle externalizes `ink` and `react`
-dependencies, so `node_modules` must be present alongside the built file to run the harness.
+The build bundles `src/` into one minified file, `dist/harness.js`, with esbuild.
+Type checking is a separate step: `pnpm typecheck` runs `tsc --noEmit`. The bundle
+keeps `ink` and `react` external. Keep `node_modules` next to the built file when
+you run stepwyre.
 
 ## Run
 
@@ -28,89 +36,103 @@ node dist/harness.js examples/harness.yaml
 node dist/harness.js infra.yaml app.yaml
 ```
 
-Arguments are paths to YAML configs; their `boot` lists are concatenated in argument
-order into one run (step names must be unique across all files, and `${ref.prop}`
-references work across files). On SIGINT/SIGTERM — and on a failed step — the harness
-tears down any keepalive children before exiting.
+Arguments are paths to YAML configs. stepwyre concatenates their `boot` lists in
+argument order into one run. Step names must be unique across all files.
+`${ref.prop}` references work across files. On SIGINT or SIGTERM, and after a
+failed step, stepwyre stops all keepalive children before it exits.
 
-Progress lines go to stderr and are colored when it is a terminal. Set `NO_COLOR` to
-disable colors or `FORCE_COLOR` to keep them when piping.
+Progress lines go to stderr. They are colored when stderr is a terminal. Set
+`NO_COLOR` to disable colors. Set `FORCE_COLOR` to keep colors when you pipe the
+output.
 
 ## Log viewer
 
-When stdout and stdin are a terminal the harness runs a full-screen log viewer: every line
-is prefixed with its step name, and steps marked `logs: json` render each JSON
-line collapsed as `▸ <message>` (`msg` or `message` key; `level` colors the
-row). Click a row to expand or collapse the full record; mouse wheel or arrow
-keys scroll; scrolling up pauses auto-follow and scrolling back to the bottom
-(or `G`) resumes it; `g` jumps to the top; Ctrl+C tears everything down.
+When stdout and stdin are a terminal, stepwyre runs a full-screen log viewer. The
+viewer prefixes each line with its step name. For steps marked `logs: json`, the
+viewer collapses each JSON line to `▸ <message>`. The viewer reads the message from
+the `msg` or `message` key. The `level` value sets the row color. Click a row to
+expand or collapse the full record. Scroll with the mouse wheel or the arrow keys.
+When you scroll up, auto-follow stops. Scroll to the bottom, or press `G`, to start
+auto-follow again. Press `g` to jump to the top. Press Ctrl+C to stop all steps.
 
-Space pauses the viewer: rendering freezes and mouse reporting turns off, so
-text can be selected and copied normally (no Shift needed); space again resumes
-and buffered logs catch up. On exit the last visible screen — including any
-expanded records — is printed to the normal terminal, so the final state
-survives the alternate screen; nothing else is persisted.
+Press space to pause the viewer. The screen freezes and mouse reporting stops. You
+can then select and copy text without the Shift key. Press space again to resume.
+The viewer then shows the buffered logs. On exit, stepwyre prints the last visible
+screen, with the expanded records, to the normal terminal. stepwyre does not
+persist anything else.
 
-When stdout or stdin is not a terminal (pipe, CI) the harness prints prefixed lines
-instead, docker-compose style; JSON steps print just the message.
+When stdout or stdin is not a terminal (a pipe or CI), stepwyre prints prefixed
+lines in the docker-compose style. For JSON steps it prints only the message.
 
-`--json` switches to machine output: no viewer, every event printed to stdout
-as one NDJSON envelope `{"@log":1,"step":...,"stream":...,"ts":...,"line":...,
-"json":true|false}` (`json` marks lines of `logs: json` steps that parsed).
-Useful for scripts and agents: `harness --json cfg.yaml | jq 'select(.json)'`.
+`--json` switches to machine output. There is no viewer. stepwyre prints every
+event to stdout as one NDJSON envelope `{"@log":1,"step":...,"stream":...,
+"ts":...,"line":...,"json":true|false}`. The `json` field marks lines of
+`logs: json` steps that parsed. This mode is useful for scripts and agents:
+`stepwyre --json cfg.yaml | jq 'select(.json)'`.
 
-Harnesses nest through the same protocol: steps run with `LOGS_JSON=1` set,
-which makes a nested harness emit envelopes, and the outer harness unwraps
-them — step names compose (`userapi/start`), streams and json records survive,
-and the viewer shows nested steps with their own prefixes and collapsible
-records. No `logs: json` needed on the step that runs the nested harness.
+Nested runs use the same protocol. Steps run with `LOGS_JSON=1` set. A nested
+stepwyre then emits envelopes. The outer stepwyre unwraps them. Step names compose
+(`userapi/start`). Streams and JSON records survive. The viewer shows nested steps
+with their own prefixes and collapsible records. The step that runs the nested
+stepwyre does not need `logs: json`.
 
-Step stdin is never connected to the terminal, so interactive child processes
-are not supported; when debugging, use the VS Code Debug Console. To keep
-tools like pnpm from waiting on prompts, steps run with `CI=true` unless the
-caller already set `CI`. A oneoff step fails the boot as soon as its script's
-last command exits non-zero — no explicit `exit` needed.
+Step stdin is not connected to the terminal. Interactive child processes are not
+supported. Use the VS Code Debug Console when you debug. Steps run with `CI=true`
+unless the caller sets `CI`. This prevents prompts from tools such as pnpm. A
+oneoff step fails the boot when the last command of its script exits non-zero. You
+do not need an explicit `exit`.
 
 Try it: `node dist/harness.js examples/tui-demo.yaml`
 
 ## Config format
 
-The config has a single `boot` key holding a sequence of steps run in order. Each step
-is a mapping:
+The config has one `boot` key. It holds a sequence of steps. stepwyre runs the
+steps in order. Each step is a mapping:
 
-- `name` — required, unique. Later steps reference its props as `${name.prop}`.
-- `script` — required. Runs under `bash -c`. Use a `|` block scalar for multi-line scripts.
-- `lifecycle` — optional, `oneoff` (default) or `keepalive`.
-  - `oneoff` runs to completion; any environment it exports flows into the following steps.
-  - `keepalive` starts in the background and stays running; the harness kills it on teardown.
-- Any other key (e.g. `port`) becomes a resolved prop on the step, referenceable later as `${name.port}`.
+- `name` is required and must be unique. Later steps reference its props as `${name.prop}`.
+- `script` is required. It runs under `bash -c`. Use a `|` block scalar for multi-line scripts.
+- `lifecycle` is optional. The values are `oneoff` (default) and `keepalive`.
+  - A `oneoff` step runs to completion. The environment it exports flows into the steps that follow.
+  - A `keepalive` step starts in the background and stays running. stepwyre stops it on teardown.
+- Each other key (for example `port`) becomes a resolved prop on the step. Later steps reference it as `${name.port}`.
 
 ### `${...}` expansion
 
-Values are expanded left to right, key by key, in insertion order:
+stepwyre expands values from left to right, key by key, in insertion order:
 
-- `${FREE_PORT}` — a fresh free TCP port, allocated per occurrence.
-- `${REF.prop}` — a prop from an earlier step (cross-step reference).
-- `${prop}` — a prop resolved earlier in the same step.
-- `${ENV.NAME}` — an environment variable (sees `export`s from previous oneoff steps).
-  Bash semantics: an unset variable is an empty string, never an error.
-- `${A ?? B}` — fallback chain: the first defined, non-empty term wins. A chain where
-  every term is empty (e.g. unset `ENV` vars) resolves to an empty string.
-  Example: `port: ${ENV.SERVER_PORT ?? FREE_PORT}` makes a prop overridable from the shell.
-- Literals: `'...'` or `"..."` is a string literal anywhere in a chain
-  (`repo: ${ENV.SRC ?? '/path/with spaces'}`). An unquoted fallback term that addresses
-  nothing known (no `ENV.`, no `FREE_PORT`, no known step ref, no prop) is taken verbatim —
-  `${ENV.PG_HOST ?? localhost}` and `${ENV.PG_PORT ?? 5432}` work, while `${typo}` or an
-  unknown `${step.prop}` reference still errors.
+- `${FREE_PORT}` allocates a fresh free TCP port. Each occurrence gets its own port.
+- `${REF.prop}` reads a prop from an earlier step (a cross-step reference).
+- `${prop}` reads a prop that resolved earlier in the same step.
+- `${ENV.NAME}` reads an environment variable. It sees the exports from previous
+  oneoff steps. Bash semantics apply: an unset variable is an empty string, not an
+  error.
+- `${A ?? B}` is a fallback chain. The first defined, non-empty term wins. When
+  every term is empty (for example, unset `ENV` vars), the chain resolves to an
+  empty string. Example: `port: ${ENV.SERVER_PORT ?? FREE_PORT}` makes a prop
+  overridable from the shell.
+- `'...'` and `"..."` are string literals. They are valid anywhere in a chain
+  (`repo: ${ENV.SRC ?? '/path/with spaces'}`). An unquoted fallback term that
+  addresses nothing known is taken verbatim. Nothing known means: no `ENV.`, no
+  `FREE_PORT`, no known step ref, no prop. So `${ENV.PG_HOST ?? localhost}` and
+  `${ENV.PG_PORT ?? 5432}` work. `${typo}` and an unknown `${step.prop}` reference
+  are still errors.
 
-An unresolved `${...}` is an error. `${...}` is the harness expansion namespace, so inside
-scripts reference shell environment with `$VAR`, not `${VAR}`.
+An unresolved `${...}` is an error. `${...}` is the stepwyre expansion namespace.
+Inside scripts, reference the shell environment with `$VAR`, not `${VAR}`.
 
-See `examples/harness.yaml` for a self-contained config that exercises every feature and
-then terminates.
+See `examples/harness.yaml` for a config that exercises every feature and then
+terminates.
 
 ## VS Code debugging
 
-`examples/launch.json` contains a launch config that runs `dist/harness.js` against
-`examples/harness.yaml` in the integrated terminal. Copy it to `.vscode/launch.json`
-(or point your workspace at it) and run `pnpm build` first so `dist/harness.js` exists.
+`examples/launch.json` contains a launch config. It runs `dist/harness.js` against
+`examples/harness.yaml` in the integrated terminal. Copy it to
+`.vscode/launch.json`, or point your workspace at it. Run `pnpm build` first so
+that `dist/harness.js` exists.
+
+## Brand
+
+Logo, lockups, and the social banner are in [`brand/`](brand/). The brand book is
+[`docs/brand.html`](docs/brand.html). The landing page is
+[`docs/index.html`](docs/index.html). Both files are self-contained and ready for
+GitHub Pages served from `/docs`.

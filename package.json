@@ -1,9 +1,9 @@
 {
-  "name": "node-harness",
+  "name": "stepwyre",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "harness": "dist/harness.js"
+    "stepwyre": "dist/harness.js"
   },
   "files": [
     "dist"
