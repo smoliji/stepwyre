@@ -16,7 +16,7 @@ export class StreamSink implements Sink {
     private out: NodeJS.WritableStream & { isTTY?: boolean } = process.stdout,
     private err: NodeJS.WritableStream & { isTTY?: boolean } = process.stderr,
   ) {
-    this.pad = Math.max(...['harness', ...stepNames].map((name) => name.length)) + 2;
+    this.pad = Math.max(...['stepwyre', ...stepNames].map((name) => name.length)) + 2;
   }
 
   event(event: LogEvent): void {

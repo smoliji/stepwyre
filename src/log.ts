@@ -22,5 +22,5 @@ export function stepColor(step: string): Format {
 }
 
 export function logError(message: string): void {
-  process.stderr.write(`${paint('dim', '[harness]')} ${paint('red', message)}\n`);
+  process.stderr.write(`${paint('dim', '[stepwyre]')} ${paint('red', message)}\n`);
 }

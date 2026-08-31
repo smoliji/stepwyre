@@ -34,14 +34,14 @@ test('json events print the extracted message', () => {
     ts: 0,
     json: { message: 'listening', severity: 'info', pretty: '{}' },
   });
-  assert.equal(out.text(), 'api      | listening\n');
+  assert.equal(out.text(), 'api       | listening\n');
 });
 
-test('system events go to stderr with harness prefix', () => {
+test('system events go to stderr with stepwyre prefix', () => {
   const err = capture();
   const sink = new StreamSink([], capture().stream, err.stream);
-  sink.event({ step: 'harness', stream: 'system', line: 'keepalive api started', ts: 0 });
-  assert.equal(err.text(), 'harness  | keepalive api started\n');
+  sink.event({ step: 'stepwyre', stream: 'system', line: 'keepalive api started', ts: 0 });
+  assert.equal(err.text(), 'stepwyre  | keepalive api started\n');
 });
 
 test('close waits for pending writes to drain before resolving', async () => {
@@ -49,5 +49,5 @@ test('close waits for pending writes to drain before resolving', async () => {
   const sink = new StreamSink(['api'], out.stream, capture().stream);
   sink.event({ step: 'api', stream: 'stdout', line: 'hello', ts: 0 });
   await sink.close();
-  assert.equal(out.text(), 'api      | hello\n');
+  assert.equal(out.text(), 'api       | hello\n');
 });

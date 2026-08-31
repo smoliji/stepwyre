@@ -2,6 +2,7 @@
 import process from 'node:process';
 import { loadConfigs } from './config.js';
 import { runHarness } from './runner.js';
+import { printBanner } from './banner.js';
 import { logError } from './log.js';
 import { StreamSink, type Sink } from './sink.js';
 import { JsonSink } from './jsonSink.js';
@@ -13,16 +14,17 @@ const jsonMode =
 const configPaths = args.filter((arg) => arg !== '--json');
 
 if (configPaths.length === 0) {
-  console.error('usage: harness [--json] <config.yaml> [config2.yaml ...]');
+  console.error('usage: stepwyre [--json] <config.yaml> [config2.yaml ...]');
   process.exit(1);
 }
 
 async function main(paths: string[]): Promise<void> {
   const config = loadConfigs(paths);
+  if (!jsonMode) printBanner(config.boot.length, paths);
   const sink: Sink = jsonMode
     ? new JsonSink()
     : process.stdout.isTTY && process.stdin.isTTY
-      ? createInkSink()
+      ? createInkSink({ stepCount: config.boot.length, paths })
       : new StreamSink(config.boot.map((step) => step.name));
   try {
     await runHarness(config, sink);

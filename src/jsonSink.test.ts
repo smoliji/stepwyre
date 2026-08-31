@@ -42,12 +42,12 @@ test('JsonSink writes one NDJSON envelope per event to its stream', () => {
   out.on('data', (chunk) => chunks.push(String(chunk)));
   const sink = new JsonSink(out);
   sink.event(event);
-  sink.event({ step: 'harness', stream: 'system', line: 'oneoff env done', ts: 9 });
+  sink.event({ step: 'stepwyre', stream: 'system', line: 'oneoff env done', ts: 9 });
   const lines = chunks.join('').trimEnd().split('\n');
   assert.equal(lines.length, 2);
   assert.equal(JSON.parse(lines[0]!)['@log'], 1);
   assert.deepEqual(parseEnvelope(lines[1]!), {
-    step: 'harness',
+    step: 'stepwyre',
     stream: 'system',
     ts: 9,
     line: 'oneoff env done',

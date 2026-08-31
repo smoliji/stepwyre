@@ -16,8 +16,8 @@ test('non-TTY run prefixes child output and reports lifecycle events', async () 
   );
   assert.match(stdout, /db_tunnel\s+\| db_tunnel listening on \d+/);
   assert.match(stdout, /app_start\s+\| app SQL_PORT=\d+/);
-  assert.match(stderr, /harness\s+\| keepalive db_tunnel started/);
-  assert.match(stderr, /harness\s+\| oneoff envs done/);
+  assert.match(stderr, /stepwyre\s+\| keepalive db_tunnel started/);
+  assert.match(stderr, /stepwyre\s+\| oneoff envs done/);
 });
 
 async function configFile(dir: string, yaml: string): Promise<string> {
@@ -106,7 +106,7 @@ test('nested harness envelopes compose step names in the outer sink', async () =
     });
     assert.match(stream.stdout, /sub\/app\s+\| tick one/);
     assert.match(stream.stdout, /sub\/app\s+\| plain banner/);
-    assert.match(stream.stderr, /sub\/harness\s+\| oneoff app done/);
+    assert.match(stream.stderr, /sub\/stepwyre\s+\| oneoff app done/);
 
     const machine = await run(
       process.execPath,

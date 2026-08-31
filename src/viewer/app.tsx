@@ -11,6 +11,13 @@ import { dumpLines } from './dump.js';
 
 const BUFFER_CAP = 10000;
 const FLUSH_MS = 50;
+const HEADER_ROWS = 1;
+const COPPER = '#E68A4D';
+
+export interface RunMeta {
+  stepCount: number;
+  paths: string[];
+}
 
 interface Feed {
   deliver?: (events: LogEvent[]) => void;
@@ -22,19 +29,21 @@ function toEntry(event: LogEvent, id: number): ViewEntry {
   return { id, step: event.step, stream: event.stream, raw: event.line, json: event.json };
 }
 
-function App({ feed }: { feed: Feed }) {
+function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
   const { stdout } = useStdout();
   const [entries, setEntries] = useState<ViewEntry[]>([]);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const [scroll, setScroll] = useState<ScrollState>({ scrollTop: 0, follow: true });
-  const [size, setSize] = useState({ width: stdout.columns, height: stdout.rows });
+  // some ptys report a 0×0 winsize — a collapsed box would paint nothing
+  const measure = () => ({ width: stdout.columns || 80, height: stdout.rows || 24 });
+  const [size, setSize] = useState(measure);
   const [paused, setPaused] = useState(false);
   const nextId = useRef(1);
   const pending = useRef<LogEvent[]>([]);
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
 
-  const viewHeight = paused ? Math.max(1, size.height - 1) : size.height;
+  const viewHeight = Math.max(1, size.height - HEADER_ROWS - (paused ? 1 : 0));
   const rows = useMemo(
     () => layout(entries, expanded, size.width),
     [entries, expanded, size.width],
@@ -105,7 +114,7 @@ function App({ feed }: { feed: Feed }) {
   }, [feed]);
 
   useEffect(() => {
-    const onResize = () => setSize({ width: stdout.columns, height: stdout.rows });
+    const onResize = () => setSize(measure());
     stdout.on('resize', onResize);
     return () => {
       stdout.off('resize', onResize);
@@ -127,7 +136,8 @@ function App({ feed }: { feed: Feed }) {
           );
           continue;
         }
-        const row = live.current.rows[live.current.scrollTop + action.y];
+        if (action.y < HEADER_ROWS) continue;
+        const row = live.current.rows[live.current.scrollTop + action.y - HEADER_ROWS];
         const entry = row && live.current.byId.get(row.entryId);
         if (entry?.json) {
           setExpanded((current) => {
@@ -169,8 +179,15 @@ function App({ feed }: { feed: Feed }) {
   const visible = rows.slice(view.scrollTop, view.scrollTop + viewHeight);
   feed.lastFrame = dumpLines(visible, byId, expanded, pad);
 
+  const stepsLabel = `${meta.stepCount} ${meta.stepCount === 1 ? 'step' : 'steps'}`;
+
   return (
     <Box flexDirection="column" width={size.width} height={size.height}>
+      <Text wrap="truncate">
+        <Text color={COPPER}>{'▂▄▆ '}</Text>
+        <Text bold>stepwyre</Text>
+        <Text dimColor>{` · ${stepsLabel} · ${meta.paths.join(' ')}`}</Text>
+      </Text>
       {visible.map((row, index) => {
         const entry = byId.get(row.entryId);
         if (!entry) return <Text key={index}> </Text>;
@@ -213,9 +230,9 @@ function App({ feed }: { feed: Feed }) {
   );
 }
 
-export function createInkSink(): Sink {
+export function createInkSink(meta: RunMeta): Sink {
   const feed: Feed = { backlog: [] };
-  const instance = render(<App feed={feed} />, {
+  const instance = render(<App feed={feed} meta={meta} />, {
     alternateScreen: true,
     exitOnCtrlC: false,
     patchConsole: false,

@@ -83,7 +83,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
   let current: ChildProcess | undefined;
 
   const system = (line: string) => {
-    sink.event({ step: 'harness', stream: 'system', line, ts: Date.now() });
+    sink.event({ step: 'stepwyre', stream: 'system', line, ts: Date.now() });
   };
 
   const teardown = () => {
