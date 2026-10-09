@@ -11,8 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `ready` on keepalive steps: a probe script that gates the next step, with
   `interval` and `timeout`, and `ready: nested` for sub-harness steps
-- `boot complete` and `keepalive <name> ready` events carry a `kind` field in
-  `--json` output and through the envelope protocol
+- Lifecycle events carry `kind` (`step`, `done`, `ready`, `exited`, `failed`,
+  `boot`, `stop`, `end`), `subject`, `props`, and `code` in `--json` output
+  and through the envelope protocol
+- `--state <file>` keeps a JSON document with the run phase and the resolved
+  props of every step, nested stepwyres included
 
 ### Changed
 

@@ -592,3 +592,66 @@ test('a second SIGINT during teardown kills at once', async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('--state keeps a json file with phases and props, including nested steps', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-state-'));
+  try {
+    const innerPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: svc',
+        '    port: ${ENV.SERVER_PORT ?? FREE_PORT}',
+        '    lifecycle: keepalive',
+        '    script: sleep 1',
+        '',
+      ].join('\n'),
+    );
+    const statePath = join(dir, 'state.json');
+    const outerPath = join(dir, 'outer.yaml');
+    await writeFile(
+      outerPath,
+      [
+        'boot:',
+        '  - name: env',
+        '    script: export SERVER_PORT=4321',
+        '  - name: sub',
+        '    lifecycle: keepalive',
+        '    ready: nested',
+        `    script: ${process.execPath} --import tsx src/index.ts ${innerPath}`,
+        '',
+      ].join('\n'),
+    );
+    const { readFile } = await import('node:fs/promises');
+    const proc = spawn(
+      process.execPath,
+      ['--import', 'tsx', 'src/index.ts', '--state', statePath, outerPath],
+      { env: { ...process.env, NO_COLOR: '1' }, stdio: ['ignore', 'ignore', 'pipe'] },
+    );
+    let stderr = '';
+    proc.stderr?.setEncoding('utf8');
+    proc.stderr?.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    const ended = new Promise<number | null>((resolve) => proc.once('exit', resolve));
+    await waitUntil(() => Promise.resolve(stderr.includes('boot complete')), 10000);
+    const up = JSON.parse(await readFile(statePath, 'utf8')) as {
+      phase: string;
+      steps: Record<string, { lifecycle: string; status: string; props: Record<string, string> }>;
+    };
+    assert.equal(up.phase, 'up');
+    assert.equal(up.steps.env?.status, 'done');
+    assert.equal(up.steps.sub?.status, 'ready');
+    assert.equal(up.steps['sub/svc']?.lifecycle, 'keepalive');
+    assert.equal(up.steps['sub/svc']?.props.port, '4321');
+    assert.equal(up.steps.sub?.props.script, undefined);
+
+    proc.kill('SIGTERM');
+    assert.equal(await ended, 143);
+    const final = JSON.parse(await readFile(statePath, 'utf8')) as { phase: string; code: unknown };
+    assert.equal(final.phase, 'stopped');
+    assert.equal(final.code, 143);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

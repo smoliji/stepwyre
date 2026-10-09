@@ -1,6 +1,17 @@
 import type { JsonLog } from './jsonLog.js';
 
-export type EventKind = 'ready' | 'boot';
+export type EventKind = 'step' | 'done' | 'ready' | 'exited' | 'failed' | 'boot' | 'stop' | 'end';
+
+export const EVENT_KINDS: ReadonlySet<string> = new Set<EventKind>([
+  'step',
+  'done',
+  'ready',
+  'exited',
+  'failed',
+  'boot',
+  'stop',
+  'end',
+]);
 
 export interface LogEvent {
   step: string;
@@ -8,7 +19,14 @@ export interface LogEvent {
   line: string;
   ts: number;
   json?: JsonLog;
+  /** lifecycle marker on a system line */
   kind?: EventKind;
+  /** the step a lifecycle event is about */
+  subject?: string;
+  /** resolved props, on a `step` event */
+  props?: Record<string, string>;
+  /** exit code or signal, on `exited` and `end` events */
+  code?: number | string | null;
 }
 
 export const MAX_LINE = 32768;

@@ -58,3 +58,29 @@ test('kind round-trips and is absent when the event has none', () => {
     undefined,
   );
 });
+
+test('subject, props and code round-trip', () => {
+  const parsed = parseEnvelope(
+    envelope({
+      step: 'stepwyre',
+      stream: 'system',
+      line: 'keepalive db started',
+      ts: 1,
+      kind: 'step',
+      subject: 'db',
+      props: { port: '5432', lifecycle: 'keepalive' },
+      code: null,
+    }),
+  );
+  assert.equal(parsed?.subject, 'db');
+  assert.deepEqual(parsed?.props, { port: '5432', lifecycle: 'keepalive' });
+  assert.equal(parsed?.code, null);
+  assert.equal(
+    parseEnvelope(envelope({ step: 'x', stream: 'stdout', line: 'y', ts: 1 }))?.code,
+    undefined,
+  );
+  assert.equal(
+    parseEnvelope('{"@log":1,"step":"x","stream":"system","line":"y","props":{"a":1}}')?.props,
+    undefined,
+  );
+});

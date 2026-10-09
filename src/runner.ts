@@ -52,6 +52,9 @@ function attachOutput(
           if (json) event.json = json;
         }
         if (wrapped.kind) event.kind = wrapped.kind;
+        if (wrapped.subject !== undefined) event.subject = `${step.name}/${wrapped.subject}`;
+        if (wrapped.props) event.props = wrapped.props;
+        if (wrapped.code !== undefined) event.code = wrapped.code;
         sink.event(event);
         if (wrapped.kind === 'boot' && wrapped.step === 'stepwyre') onNestedBoot?.();
         return;
@@ -139,10 +142,24 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
     stop = resolve;
   });
 
-  const system = (line: string, kind?: EventKind) => {
-    const event: LogEvent = { step: 'stepwyre', stream: 'system', line, ts: Date.now() };
+  const system = (
+    line: string,
+    kind?: EventKind,
+    detail: Omit<LogEvent, 'step' | 'stream' | 'line' | 'ts' | 'kind'> = {},
+  ) => {
+    const event: LogEvent = { step: 'stepwyre', stream: 'system', line, ts: Date.now(), ...detail };
     if (kind) event.kind = kind;
     sink.event(event);
+  };
+
+  const started = (step: ResolvedStep) => {
+    const { script: _script, ...props } = step.props;
+    system(`${step.lifecycle} ${step.name} started`, 'step', { subject: step.name, props });
+  };
+
+  const fail = (message: string, subject?: string) => {
+    system(message, 'failed', subject === undefined ? {} : { subject });
+    finish(1);
   };
 
   const stopOne = async (tracked: Tracked) => {
@@ -162,7 +179,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
     const live = [...keepalive, ...(current ? [current] : [])].filter(alive);
     teardownDone = (async () => {
       if (live.length === 0) return;
-      system(`stopping ${live.length} step${live.length === 1 ? '' : 's'}`);
+      system(`stopping ${live.length} step${live.length === 1 ? '' : 's'}`, 'stop');
       await Promise.all(live.map(stopOne));
       system('teardown complete');
     })();
@@ -210,7 +227,8 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
       if (Date.now() >= deadline) {
         const detail = result.stderr.trim().split('\n').pop();
         if (detail) system(`ready probe for ${step.name}: ${detail}`);
-        throw new Error(`keepalive ${step.name} not ready after ${ready.timeout}s`);
+        fail(`keepalive ${step.name} not ready after ${ready.timeout}s`, step.name);
+        return;
       }
       await Promise.race([delay(ready.interval * 1000, undefined, unref), stopped]);
     }
@@ -234,18 +252,24 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
         });
         attachOutput(child, resolved, sink, bootSeen);
         child.once('exit', (code, exitSignal) => {
-          system(`keepalive ${resolved.name} exited (${exitOf(code, exitSignal)})`);
+          const exit = exitOf(code, exitSignal);
+          system(`keepalive ${resolved.name} exited (${exit})`, 'exited', {
+            subject: resolved.name,
+            code: exit,
+          });
           if (!tearingDown) finish(code === 0 ? 0 : 1);
         });
         child.once('error', (err) => {
-          system(`keepalive ${resolved.name} failed to start: ${err.message}`);
-          if (!tearingDown) finish(1);
+          if (tearingDown) return;
+          fail(`keepalive ${resolved.name} failed to start: ${err.message}`, resolved.name);
         });
         keepalive.push(track(resolved.name, child, resolved.stopTimeout));
-        system(`keepalive ${resolved.name} started`);
+        started(resolved);
         await awaitReady(resolved, nestedBoot);
         if (terminating) break;
-        if (resolved.ready) system(`keepalive ${resolved.name} ready`, 'ready');
+        if (resolved.ready) {
+          system(`keepalive ${resolved.name} ready`, 'ready', { subject: resolved.name });
+        }
         continue;
       }
 
@@ -263,6 +287,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
       );
       current = track(resolved.name, child, resolved.stopTimeout);
       attachOutput(child, resolved, sink);
+      started(resolved);
       const fd3 = child.stdio[3];
       const envPipe = fd3 instanceof Readable ? fd3 : null;
       const chunks: Buffer[] = [];
@@ -275,31 +300,37 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
             envPipe.once('error', resolve);
           })
         : Promise.resolve();
-      const code = await new Promise<number | null>((resolve, reject) => {
+      const code = await new Promise<number | null | Error>((resolve) => {
         child.once('exit', resolve);
-        child.once('error', (err) => {
-          reject(new Error(`step ${resolved.name} failed to start: ${err.message}`));
-        });
+        child.once('error', resolve);
       });
       current = undefined;
       if (terminating) break;
+      if (code instanceof Error) {
+        fail(`step ${resolved.name} failed to start: ${code.message}`, resolved.name);
+        break;
+      }
       await Promise.race([pipeDone, delay(200)]);
       envPipe?.destroy();
       const dump = Buffer.concat(chunks).toString('utf8');
       if (code !== 0) {
-        throw new Error(`step ${resolved.name} failed with code ${code}`);
+        fail(`step ${resolved.name} failed with code ${code}`, resolved.name);
+        break;
       }
       const captured = parseEnvDump(dump);
       if (Object.keys(captured).length > 0) env = captured;
-      system(`oneoff ${resolved.name} done`);
+      system(`oneoff ${resolved.name} done`, 'done', { subject: resolved.name });
     }
     if (!terminating) {
       system('boot complete', 'boot');
       // the run lives while its services do; a signal or a dying keepalive ends it
       if (keepalive.length > 0) await stopped;
     }
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err));
   } finally {
     await teardown();
+    system(`run ended (${exitCode})`, 'end', { code: exitCode });
   }
   return exitCode;
 }

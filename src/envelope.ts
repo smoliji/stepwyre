@@ -1,4 +1,4 @@
-import type { EventKind, LogEvent } from './events.js';
+import { EVENT_KINDS, type EventKind, type LogEvent } from './events.js';
 import { parseJsonObject } from './jsonLog.js';
 
 const MARKER = '@log';
@@ -6,7 +6,17 @@ const MARKER = '@log';
 const isStream = (value: unknown): value is LogEvent['stream'] =>
   value === 'stdout' || value === 'stderr' || value === 'system';
 
-const isKind = (value: unknown): value is EventKind => value === 'ready' || value === 'boot';
+const isKind = (value: unknown): value is EventKind =>
+  typeof value === 'string' && EVENT_KINDS.has(value);
+
+const isProps = (value: unknown): value is Record<string, string> =>
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.values(value).every((item) => typeof item === 'string');
+
+const isCode = (value: unknown): value is number | string | null =>
+  value === null || typeof value === 'number' || typeof value === 'string';
 
 export interface Envelope {
   step: string;
@@ -15,6 +25,9 @@ export interface Envelope {
   line: string;
   json: boolean;
   kind?: EventKind;
+  subject?: string;
+  props?: Record<string, string>;
+  code?: number | string | null;
 }
 
 export function envelope(event: LogEvent): string {
@@ -26,6 +39,9 @@ export function envelope(event: LogEvent): string {
     line: event.line,
     json: event.json !== undefined,
     ...(event.kind ? { kind: event.kind } : {}),
+    ...(event.subject !== undefined ? { subject: event.subject } : {}),
+    ...(event.props ? { props: event.props } : {}),
+    ...(event.code !== undefined ? { code: event.code } : {}),
   });
 }
 
@@ -44,5 +60,8 @@ export function parseEnvelope(line: string): Envelope | undefined {
     json: record.json === true,
   };
   if (isKind(record.kind)) parsed.kind = record.kind;
+  if (typeof record.subject === 'string') parsed.subject = record.subject;
+  if (isProps(record.props)) parsed.props = record.props;
+  if (isCode(record.code)) parsed.code = record.code;
   return parsed;
 }
