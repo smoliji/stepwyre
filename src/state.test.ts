@@ -56,6 +56,29 @@ test('status follows done, ready, exited and failed while props persist', () => 
   state = reduce(state, system('step x failed', { kind: 'failed', subject: 'x' }));
   assert.equal(state.steps.x?.status, 'failed');
   assert.equal(state.phase, 'failed');
+  assert.equal(state.failure, 'api');
+});
+
+test('failure names the first step that ended the run, not a teardown exit', () => {
+  let state = initialState([]);
+  state = reduce(state, system('boot complete', { kind: 'boot' }));
+  state = reduce(state, system('stopping 1 step', { kind: 'stop' }));
+  state = reduce(
+    state,
+    system('keepalive api exited (143)', { kind: 'exited', subject: 'api', code: 143 }),
+  );
+  assert.equal(state.failure, undefined);
+
+  state = initialState([]);
+  state = reduce(
+    state,
+    system('step migrate failed with code 1', { kind: 'failed', subject: 'migrate' }),
+  );
+  state = reduce(
+    state,
+    system('keepalive db exited (130)', { kind: 'exited', subject: 'db', code: 130 }),
+  );
+  assert.equal(state.failure, 'migrate');
 });
 
 test('phase moves through up, stopping and stopped on the root events only', () => {

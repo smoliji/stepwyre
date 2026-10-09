@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import process from 'node:process';
 import { Box, Text, render, useInput, useStdout } from 'ink';
-import { runDetail } from '../banner.js';
 import type { LogEvent } from '../events.js';
 import type { Sink } from '../sink.js';
+import { initialState, reduce, type Phase, type RunState } from '../state.js';
+import { phaseLabel, serviceLabel, services, type Service } from './header.js';
 import { stepColor } from '../log.js';
 import { layout, type ViewEntry } from './layout.js';
 import { appendCapped, pruneExpanded } from './buffer.js';
@@ -13,13 +14,28 @@ import { dumpLines, expandMarker } from './dump.js';
 
 const BUFFER_CAP = 10000;
 const FLUSH_MS = 50;
-const HEADER_ROWS = 1;
+const HEADER_ROWS = 2;
 const COPPER = '#E68A4D';
 
 export interface RunMeta {
-  stepCount: number;
   paths: string[];
 }
+
+const PHASE_COLOR: Record<Phase, string | undefined> = {
+  booting: 'yellow',
+  up: 'green',
+  stopping: 'yellow',
+  stopped: undefined,
+  failed: 'red',
+};
+
+const STATUS_COLOR: Record<Service['status'], string | undefined> = {
+  running: 'yellow',
+  ready: 'green',
+  done: 'green',
+  exited: undefined,
+  failed: 'red',
+};
 
 interface Feed {
   deliver?: (events: LogEvent[]) => void;
@@ -40,6 +56,7 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
   const measure = () => ({ width: stdout.columns || 80, height: stdout.rows || 24 });
   const [size, setSize] = useState(measure);
   const [paused, setPaused] = useState(false);
+  const [run, setRun] = useState<RunState>(() => initialState(meta.paths));
   const nextId = useRef(1);
   const pending = useRef<LogEvent[]>([]);
   const entriesRef = useRef(entries);
@@ -75,7 +92,9 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
     feed.deliver(feed.backlog.splice(0));
     const timer = setInterval(() => {
       if (pending.current.length === 0 || live.current.paused) return;
-      const fresh = pending.current.splice(0).map((event) => toEntry(event, nextId.current++));
+      const events = pending.current.splice(0);
+      setRun((current) => ({ ...events.reduce((state, event) => reduce(state, event), current) }));
+      const fresh = events.map((event) => toEntry(event, nextId.current++));
       const { next, dropped } = appendCapped(entriesRef.current, fresh, BUFFER_CAP);
       entriesRef.current = next;
       setEntries(next);
@@ -167,7 +186,18 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
       <Text wrap="truncate">
         <Text color={COPPER}>{'▂▄▆ '}</Text>
         <Text bold>stepwyre</Text>
-        <Text dimColor>{runDetail(meta.stepCount, meta.paths)}</Text>
+        <Text dimColor>{' · '}</Text>
+        <Text color={PHASE_COLOR[run.phase]}>{phaseLabel(run)}</Text>
+        <Text dimColor>{` · pid ${run.pid} · ${meta.paths.join(' ')}`}</Text>
+      </Text>
+      <Text wrap="truncate">
+        {services(run).map((service) => (
+          <Text key={service.name}>
+            {' '}
+            <Text color={STATUS_COLOR[service.status]}>{serviceLabel(service)}</Text>
+            {'  '}
+          </Text>
+        ))}
       </Text>
       {visible.map((row, index) => {
         const entry = byId.get(row.entryId);

@@ -17,6 +17,8 @@ export interface RunState {
   started: number;
   phase: Phase;
   code?: number | string | null;
+  /** the step that ended the run early, when one did */
+  failure?: string;
   steps: Record<string, StepState>;
 }
 
@@ -49,7 +51,13 @@ export function reduce(state: RunState, event: LogEvent): RunState {
   if (event.step !== 'stepwyre') return state;
   if (event.kind === 'boot') state.phase = 'up';
   if (event.kind === 'stop') state.phase = 'stopping';
-  if (event.kind === 'failed') state.phase = 'failed';
+  if (event.kind === 'failed') {
+    state.phase = 'failed';
+    if (event.subject !== undefined) state.failure ??= event.subject;
+  }
+  if (event.kind === 'exited' && event.code !== 0 && state.phase !== 'stopping') {
+    state.failure ??= event.subject;
+  }
   if (event.kind === 'end') {
     state.code = event.code;
     // 130 and 143 are the user's own Ctrl+C or SIGTERM, not a failure

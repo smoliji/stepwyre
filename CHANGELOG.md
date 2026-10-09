@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--state <file>` keeps a JSON document with the run phase and the resolved
   props of every step, nested stepwyres included
 
+- The viewer header shows the run phase, the pid, and every keepalive step
+  with its status and port
+- `failure` in the state file names the step that ended the run early
+
 ### Changed
 
 - Teardown waits for the children: SIGTERM to all at once, SIGKILL after

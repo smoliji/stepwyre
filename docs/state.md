@@ -26,7 +26,9 @@ jq '.steps.userapi.props.port' /tmp/stack.json
 
 - `phase` is `booting`, `up`, `stopping`, `stopped`, or `failed`. `up` means
   the last step is done and every `ready` probe passed. After the run ends,
-  the file stays with `stopped` or `failed` and the exit `code`.
+  the file stays with `stopped` or `failed` and the exit `code`. `failure`
+  names the step that ended the run early: a failed oneoff, or a keepalive
+  that exited with a non-zero code outside teardown.
 - `steps` has one entry per step, in boot order. Steps of a nested stepwyre
   appear with composed names (`userapi/start`). `status` is `running`, `done`,
   `ready`, `exited`, or `failed`. `props` holds the resolved props of the

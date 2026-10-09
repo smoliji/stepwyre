@@ -8,6 +8,22 @@ expand or collapse the full record.
 
 Try it: `node dist/harness.js examples/tui-demo.yaml`
 
+## Header
+
+The two top rows show the run. The first row has the phase of the run
+(`booting`, `up`, `stopping`, `stopped`, `failed (step)`), the pid of
+stepwyre, and the config files. The second row lists the keepalive steps with
+their status (`◐ starting`, `● ready`, `○ exited`, `✖ failed`) and the `port`
+prop when the step has one. Steps of a nested stepwyre count through the parent
+step.
+
+```
+▂▄▆ stepwyre · up · pid 48213 · infra-local.yaml svc-userapi.yaml
+ stack ● ready :49557   userapi ● ready :49564
+```
+
+The header is the same projection as the [state file](state.md).
+
 ## Keybindings
 
 - Scroll with the mouse wheel or the arrow keys. When you scroll up, auto-follow

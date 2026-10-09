@@ -48,7 +48,7 @@ async function main(paths: string[]): Promise<void> {
   const output: Sink = jsonMode
     ? new JsonSink()
     : process.stdout.isTTY && process.stdin.isTTY
-      ? createInkSink({ stepCount: config.boot.length, paths })
+      ? createInkSink({ paths })
       : new StreamSink(config.boot.map((step) => step.name));
   const tee = logPath ? new TeeSink([output, new LogFileSink(logPath)]) : output;
   const sink = statePath ? new StateSink(tee, statePath, initialState(paths)) : tee;
