@@ -61,6 +61,9 @@ Run the log viewer demo: `node dist/harness.js examples/tui-demo.yaml`
 
 ## Documentation
 
+- [Agent skill](skills/stepwyre/SKILL.md): the repo doubles as a Claude Code
+  plugin. Install it from this repo and an agent gets the `/stepwyre` skill with
+  the config essentials and the background run recipe.
 - [Config format and `${...}` expansion](docs/config.md)
 - [TUI log viewer](docs/viewer.md)
 - [JSON output and nested stepwyres](docs/json-output.md)
