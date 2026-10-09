@@ -55,7 +55,8 @@ Run the log viewer demo: `node dist/harness.js examples/tui-demo.yaml`
   viewer and copy text. Piped output uses the docker-compose style.
 - The `--json` option prints all events as NDJSON. A nested stepwyre run
   composes into the parent run. `--state <file>` keeps a JSON document with
-  the phase of the run and the resolved props of every step.
+  the phase of the run and the resolved props of every step. `--log <file>`
+  writes the NDJSON next to the viewer.
 - The runtime dependencies are the Node builtins, plus `ink` and `react` for
   the viewer.
 

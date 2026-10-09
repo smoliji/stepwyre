@@ -41,6 +41,18 @@ stepwyre --json cfg.yaml | jq -c 'select(.kind=="step") | {subject, props}'
 
 See [State file](state.md) for the same data as one JSON document.
 
+## Log file
+
+`--log <file>` writes the same NDJSON lines to a file while the viewer or the
+prefixed stream stays on the terminal. Use it when a person watches the run and
+a script or agent reads along:
+
+```
+stepwyre --log /tmp/run/log.ndjson --state /tmp/run/state.json cfg.yaml
+```
+
+The file is truncated at start and flushed on exit.
+
 ## Nested harness protocol
 
 Nested runs use the same protocol. Steps run with `LOGS_JSON=1` set. A nested

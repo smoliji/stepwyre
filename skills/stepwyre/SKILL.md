@@ -81,6 +81,13 @@ kill -TERM $(cat $RUN/pid)        # then poll .phase until stopped or failed
 
 Teardown SIGTERMs every child at once and waits up to `stop_timeout` each. A second SIGTERM kills at once. A dead pid with `phase: up` is a stale file from a run that was killed hard.
 
+## A run the user started
+
+When the user runs stepwyre in their own terminal (viewer on), ask them to add
+`--log <dir>/log.ndjson --state <dir>/state.json` and give you the directory.
+From there everything above applies: poll the state, read the log. Do not
+start a second copy and do not kill their run; teardown is their Ctrl+C.
+
 ## Writing an ad hoc config
 
 Keep it to what the check needs. Put inputs in a first oneoff step with `${ENV.X ?? default}` props so the config is overridable from the shell. Give every keepalive a `ready` probe; without one the next step starts at once. Write the file into the run dir, not the repo, unless the user wants to keep it.

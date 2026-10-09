@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "stepwyre, the YAML boot orchestrator, as a Claude Code plugin.",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "plugins": [
     {
       "name": "stepwyre",
       "source": "./",
       "description": "The /stepwyre skill: config essentials and the background run recipe for agents.",
-      "version": "0.1.1"
+      "version": "0.1.2"
     }
   ]
 }

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `boot`, `stop`, `end`), `subject`, `props`, and `code` in `--json` output
   and through the envelope protocol
 - Claude Code plugin manifest and the `stepwyre` skill in `skills/`
+- `--log <file>` writes the NDJSON events to a file while the viewer stays on
 - `--state <file>` keeps a JSON document with the run phase and the resolved
   props of every step, nested stepwyres included
 

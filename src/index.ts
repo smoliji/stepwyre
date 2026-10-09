@@ -8,21 +8,39 @@ import { StreamSink, type Sink } from './sink.js';
 import { JsonSink } from './jsonSink.js';
 import { createInkSink } from './viewer/app.js';
 import { StateSink, initialState } from './state.js';
+import { LogFileSink, TeeSink } from './tee.js';
 
-const args = process.argv.slice(2);
-const jsonMode =
-  args.includes('--json') || (process.env.LOGS_JSON !== undefined && process.env.LOGS_JSON !== '');
-const stateAt = args.indexOf('--state');
-const statePath = stateAt === -1 ? undefined : args[stateAt + 1];
-const configPaths = args.filter(
-  (arg, index) =>
-    arg !== '--json' && (stateAt === -1 || (index !== stateAt && index !== stateAt + 1)),
-);
+const USAGE =
+  'usage: stepwyre [--json] [--state <file>] [--log <file>] <config.yaml> [config2.yaml ...]';
 
-if (configPaths.length === 0 || (stateAt !== -1 && !statePath)) {
-  console.error('usage: stepwyre [--json] [--state <file>] <config.yaml> [config2.yaml ...]');
+function parseArgs(args: string[]) {
+  const options: Record<string, string> = {};
+  const paths: string[] = [];
+  let json = false;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
+    if (arg === '--json') {
+      json = true;
+    } else if (arg === '--state' || arg === '--log') {
+      const value = args[++index];
+      if (value === undefined) return undefined;
+      options[arg.slice(2)] = value;
+    } else {
+      paths.push(arg);
+    }
+  }
+  if (paths.length === 0) return undefined;
+  return { json, paths, statePath: options.state, logPath: options.log };
+}
+
+const parsed = parseArgs(process.argv.slice(2));
+if (!parsed) {
+  console.error(USAGE);
   process.exit(1);
 }
+const { paths: configPaths, statePath, logPath } = parsed;
+const jsonMode =
+  parsed.json || (process.env.LOGS_JSON !== undefined && process.env.LOGS_JSON !== '');
 
 async function main(paths: string[]): Promise<void> {
   const config = loadConfigs(paths);
@@ -32,7 +50,8 @@ async function main(paths: string[]): Promise<void> {
     : process.stdout.isTTY && process.stdin.isTTY
       ? createInkSink({ stepCount: config.boot.length, paths })
       : new StreamSink(config.boot.map((step) => step.name));
-  const sink = statePath ? new StateSink(output, statePath, initialState(paths)) : output;
+  const tee = logPath ? new TeeSink([output, new LogFileSink(logPath)]) : output;
+  const sink = statePath ? new StateSink(tee, statePath, initialState(paths)) : tee;
   let code = 1;
   try {
     code = await runHarness(config, sink);

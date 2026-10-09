@@ -655,3 +655,24 @@ test('--state keeps a json file with phases and props, including nested steps', 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('--log writes NDJSON envelopes to a file next to the human output', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-log-'));
+  try {
+    const cfgPath = await configFile(dir, 'boot:\n  - name: hello\n    script: echo hi there\n');
+    const logPath = join(dir, 'log.ndjson');
+    const { stdout, stderr } = await harness(cfgPath, ['--log', logPath]);
+    assert.match(stdout, /hello\s+\| hi there/);
+    assert.match(stderr, /boot complete/);
+    const { readFile } = await import('node:fs/promises');
+    const lines = (await readFile(logPath, 'utf8'))
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.ok(lines.every((line) => line['@log'] === 1));
+    assert.ok(lines.some((line) => line.step === 'hello' && line.line === 'hi there'));
+    assert.ok(lines.some((line) => line.kind === 'end'));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
