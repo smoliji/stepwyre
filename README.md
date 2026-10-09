@@ -7,15 +7,17 @@
 <p align="center"><em>Wire your stack, step by step.</em></p>
 
 stepwyre starts your local stack from one YAML file. It runs bash steps in
-sequence. A step can allocate free TCP ports. A step can send environment
-variables to the steps that follow. A step can stay alive in the background as
-a service. A full-screen log viewer shows the output of all services.
+sequence. A step can allocate free TCP ports, send environment variables to
+the steps that follow, or stay alive in the background as a service. A
+full-screen log viewer shows the output of all services.
 
 ```yaml
 boot:
   - name: db_tunnel
     port: ${FREE_PORT}
     lifecycle: keepalive
+    ready:
+      script: nc -z localhost ${port}
     script: cloud-sql-proxy --port ${port} my-instance
 
   - name: envs
@@ -27,38 +29,37 @@ boot:
     script: pnpm start
 ```
 
-Run this config. stepwyre allocates a free port and starts the tunnel. It
-exports `SQL_PORT` and starts the app. The viewer shows the logs of the two
-services. Press Ctrl+C to stop all steps.
+stepwyre allocates a free port and starts the tunnel. Once the probe passes it
+exports `SQL_PORT` and starts the app. The viewer shows the phase of the run,
+the ports, and the logs of both services. Ctrl+C stops all steps and waits for
+them to exit.
 
 ## Install and run
 
-You need Node 22 or later, and pnpm.
+You need Node 22 or later, and pnpm. The package is not on npm yet.
 
 ```
 pnpm install && pnpm build
-node dist/harness.js examples/stepwyre.yaml
+pnpm link --global          # puts `stepwyre` on PATH
+stepwyre examples/stepwyre.yaml
 ```
 
-Run the log viewer demo: `node dist/harness.js examples/tui-demo.yaml`
+Several files form one run: `stepwyre infra.yaml app.yaml`. The log viewer
+demo: `stepwyre examples/tui-demo.yaml`.
 
 ## Features
 
-- stepwyre runs the boot steps in sequence. A step has a `oneoff` or a
-  `keepalive` lifecycle. The run lives while a keepalive step lives.
-- A `ready` probe on a keepalive step holds the boot until the service answers.
-  `boot complete` tells scripts that the stack is up.
-- `${FREE_PORT}` allocates a free TCP port. `${step.prop}` reads a value from
-  an earlier step. `${ENV.PORT ?? FREE_PORT}` is a fallback chain.
-- The environment that a `oneoff` step exports flows into the steps that follow.
-- The log viewer collapses JSON log lines to their message. You can pause the
-  viewer and copy text. Piped output uses the docker-compose style.
-- The `--json` option prints all events as NDJSON. A nested stepwyre run
-  composes into the parent run. `--state <file>` keeps a JSON document with
-  the phase of the run and the resolved props of every step. `--log <file>`
-  writes the NDJSON next to the viewer.
-- The runtime dependencies are the Node builtins, plus `ink` and `react` for
-  the viewer.
+- Steps are `oneoff` or `keepalive`. The run lives while a keepalive step
+  lives. A `ready` probe holds the boot until the service answers.
+- `${FREE_PORT}`, `${step.prop}`, `${ENV.PORT ?? FREE_PORT}` expand in any
+  prop. The environment a oneoff step exports flows into the steps that follow.
+- The viewer collapses JSON logs to their message and can be paused for
+  copying. Piped output uses the docker-compose style.
+- `--json` prints every event as NDJSON. `--state <file>` keeps a JSON
+  document with the phase and the resolved props of every step. `--log <file>`
+  writes the NDJSON beside the viewer. A nested stepwyre composes into its
+  parent. This is how an agent drives a run and finds the ports.
+- Runtime dependencies: Node builtins, plus `ink` and `react` for the viewer.
 
 ## Documentation
 
