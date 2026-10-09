@@ -85,3 +85,82 @@ test('loadConfigs rejects duplicate step names', () => {
   const file = () => configFile('boot:\n  - name: api\n    script: echo hi\n');
   assert.throws(() => loadConfigs([file(), file()]), /duplicate step name 'api'/);
 });
+
+test('accepts ready with a script and defaults for interval and timeout', () => {
+  const config = loadConfig(
+    configFile(
+      [
+        'boot:',
+        '  - name: db',
+        '    lifecycle: keepalive',
+        '    ready:',
+        '      script: pg_isready',
+        '    script: postgres',
+        '',
+      ].join('\n'),
+    ),
+  );
+  assert.deepEqual(config.boot[0]!.ready, { script: 'pg_isready', interval: 1, timeout: 60 });
+});
+
+test('accepts ready interval and timeout in seconds', () => {
+  const config = loadConfig(
+    configFile(
+      [
+        'boot:',
+        '  - name: db',
+        '    lifecycle: keepalive',
+        '    ready:',
+        '      script: pg_isready',
+        '      interval: 0.5',
+        '      timeout: 120',
+        '    script: postgres',
+        '',
+      ].join('\n'),
+    ),
+  );
+  assert.deepEqual(config.boot[0]!.ready, { script: 'pg_isready', interval: 0.5, timeout: 120 });
+});
+
+test('accepts ready: nested for a sub-harness step', () => {
+  const config = loadConfig(
+    configFile(
+      'boot:\n  - name: sub\n    lifecycle: keepalive\n    ready: nested\n    script: stepwyre x.yaml\n',
+    ),
+  );
+  assert.deepEqual(config.boot[0]!.ready, { nested: true });
+});
+
+test('rejects ready on a oneoff step', () => {
+  assert.throws(
+    () =>
+      loadConfig(
+        configFile('boot:\n  - name: a\n    ready:\n      script: true\n    script: echo hi\n'),
+      ),
+    /ready.*keepalive/,
+  );
+});
+
+test('rejects ready without a script', () => {
+  assert.throws(
+    () =>
+      loadConfig(
+        configFile(
+          'boot:\n  - name: a\n    lifecycle: keepalive\n    ready:\n      timeout: 5\n    script: sleep 1\n',
+        ),
+      ),
+    /ready.*script/,
+  );
+});
+
+test('rejects a non-positive ready timeout', () => {
+  assert.throws(
+    () =>
+      loadConfig(
+        configFile(
+          'boot:\n  - name: a\n    lifecycle: keepalive\n    ready:\n      script: true\n      timeout: 0\n    script: sleep 1\n',
+        ),
+      ),
+    /ready.*timeout/,
+  );
+});

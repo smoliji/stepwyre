@@ -3,11 +3,14 @@ import { parseYaml } from './yaml.js';
 
 export type Lifecycle = 'oneoff' | 'keepalive';
 
+export type Ready = { script: string; interval: number; timeout: number } | { nested: true };
+
 export interface BootStep {
   name: string;
   script: string;
   lifecycle: Lifecycle;
   logs?: 'json';
+  ready?: Ready;
   [key: string]: unknown;
 }
 
@@ -17,6 +20,33 @@ export interface Config {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const DEFAULT_READY_INTERVAL = 1;
+const DEFAULT_READY_TIMEOUT = 60;
+
+function seconds(value: unknown, fallback: number, label: string): number {
+  if (value === undefined) return fallback;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (typeof value === 'boolean' || value === '' || !(parsed > 0)) {
+    throw new Error(`${label} must be a positive number of seconds`);
+  }
+  return parsed;
+}
+
+function parseReady(value: unknown, lifecycle: Lifecycle, label: string): Ready {
+  if (lifecycle !== 'keepalive') {
+    throw new Error(`${label} is only valid on a keepalive step`);
+  }
+  if (value === 'nested') return { nested: true };
+  if (!isObject(value) || typeof value.script !== 'string') {
+    throw new Error(`${label} must be 'nested' or a mapping with a string 'script'`);
+  }
+  return {
+    script: value.script,
+    interval: seconds(value.interval, DEFAULT_READY_INTERVAL, `${label}.interval`),
+    timeout: seconds(value.timeout, DEFAULT_READY_TIMEOUT, `${label}.timeout`),
+  };
 }
 
 export function loadConfig(path: string): Config {
@@ -56,7 +86,11 @@ export function loadConfig(path: string): Config {
       throw new Error(`boot step '${name}' (${index}) has invalid logs '${String(item.logs)}'`);
     }
 
-    return { ...item, lifecycle } as BootStep;
+    const step = { ...item, lifecycle } as BootStep;
+    if (item.ready !== undefined) {
+      step.ready = parseReady(item.ready, lifecycle, `boot step '${name}' (${index}) ready`);
+    }
+    return step;
   });
 
   return { boot: steps };

@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Config } from './config.js';
 import { resolveStep, type ResolvedStep, type Registry } from './expand.js';
-import { LineSplitter, type LogEvent } from './events.js';
+import { LineSplitter, type EventKind, type LogEvent } from './events.js';
 import { parseJsonLog } from './jsonLog.js';
 import { parseEnvelope } from './envelope.js';
 import type { Sink } from './sink.js';
@@ -27,7 +27,12 @@ function parseEnvDump(dump: string): Record<string, string> {
   return env;
 }
 
-function attachOutput(child: ChildProcess, step: ResolvedStep, sink: Sink): void {
+function attachOutput(
+  child: ChildProcess,
+  step: ResolvedStep,
+  sink: Sink,
+  onNestedBoot?: () => void,
+): void {
   const wire = (readable: Readable | null, stream: 'stdout' | 'stderr') => {
     if (!readable) return;
     const splitter = new LineSplitter();
@@ -46,7 +51,9 @@ function attachOutput(child: ChildProcess, step: ResolvedStep, sink: Sink): void
           const json = parseJsonLog(wrapped.line);
           if (json) event.json = json;
         }
+        if (wrapped.kind) event.kind = wrapped.kind;
         sink.event(event);
+        if (wrapped.kind === 'boot' && wrapped.step === 'stepwyre') onNestedBoot?.();
         return;
       }
       const event: LogEvent = { step: step.name, stream, line, ts: Date.now() };
@@ -68,7 +75,25 @@ function attachOutput(child: ChildProcess, step: ResolvedStep, sink: Sink): void
   wire(child.stderr, 'stderr');
 }
 
-export async function runHarness(config: Config, sink: Sink): Promise<void> {
+const exitOf = (code: number | null, signal: NodeJS.Signals | null) => signal ?? code;
+
+function probeOnce(
+  script: string,
+  env: Record<string, string>,
+): Promise<{ ok: boolean; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn('bash', ['-c', script], { env, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', (err) => resolve({ ok: false, stderr: err.message }));
+    child.once('exit', (code) => resolve({ ok: code === 0, stderr }));
+  });
+}
+
+export async function runHarness(config: Config, sink: Sink): Promise<number> {
   let env = initialEnv();
   // steps never get a TTY, so tell tools (pnpm, npm, ...) not to prompt
   env.CI ??= 'true';
@@ -80,9 +105,16 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
   let tearingDown = false;
   let current: ChildProcess | undefined;
   let terminating = false;
+  let exitCode = 0;
+  let stop!: () => void;
+  const stopped = new Promise<void>((resolve) => {
+    stop = resolve;
+  });
 
-  const system = (line: string) => {
-    sink.event({ step: 'stepwyre', stream: 'system', line, ts: Date.now() });
+  const system = (line: string, kind?: EventKind) => {
+    const event: LogEvent = { step: 'stepwyre', stream: 'system', line, ts: Date.now() };
+    if (kind) event.kind = kind;
+    sink.event(event);
   };
 
   const teardown = () => {
@@ -100,18 +132,40 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
     }
   };
 
-  const exitOnSignal = (code: number) => {
+  const finish = (code: number) => {
+    if (terminating) return;
     terminating = true;
+    exitCode = code;
     teardown();
-    void sink.close().then(() => process.exit(code));
+    stop();
   };
 
-  process.once('SIGINT', () => exitOnSignal(130));
-  process.once('SIGTERM', () => exitOnSignal(143));
+  process.once('SIGINT', () => finish(130));
+  process.once('SIGTERM', () => finish(143));
+
+  const awaitReady = async (step: ResolvedStep, nestedBoot: Promise<void>) => {
+    const ready = step.ready;
+    if (!ready) return;
+    if ('nested' in ready) {
+      await Promise.race([nestedBoot, stopped]);
+      return;
+    }
+    const deadline = Date.now() + ready.timeout * 1000;
+    while (!terminating) {
+      const result = await probeOnce(ready.script, env);
+      if (result.ok) return;
+      if (Date.now() >= deadline) {
+        const detail = result.stderr.trim().split('\n').pop();
+        if (detail) system(`ready probe for ${step.name}: ${detail}`);
+        throw new Error(`keepalive ${step.name} not ready after ${ready.timeout}s`);
+      }
+      await Promise.race([delay(ready.interval * 1000), stopped]);
+    }
+  };
 
   try {
     for (const step of config.boot) {
-      if (terminating) return;
+      if (terminating) break;
       const resolved = await resolveStep(step, registry, env);
       registry[resolved.name] = resolved.props;
 
@@ -121,15 +175,25 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
           stdio: ['ignore', 'pipe', 'pipe'],
           detached: true,
         });
-        attachOutput(child, resolved, sink);
+        let bootSeen!: () => void;
+        const nestedBoot = new Promise<void>((resolve) => {
+          bootSeen = resolve;
+        });
+        attachOutput(child, resolved, sink, bootSeen);
         child.once('exit', (code, exitSignal) => {
-          if (!tearingDown) system(`keepalive ${resolved.name} exited (${exitSignal ?? code})`);
+          if (tearingDown) return;
+          system(`keepalive ${resolved.name} exited (${exitOf(code, exitSignal)})`);
+          finish(code === 0 ? 0 : 1);
         });
         child.once('error', (err) => {
           system(`keepalive ${resolved.name} failed to start: ${err.message}`);
+          finish(1);
         });
         keepalive.push(child);
         system(`keepalive ${resolved.name} started`);
+        await awaitReady(resolved, nestedBoot);
+        if (terminating) break;
+        if (resolved.ready) system(`keepalive ${resolved.name} ready`, 'ready');
         continue;
       }
 
@@ -166,7 +230,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
         });
       });
       current = undefined;
-      if (terminating) return;
+      if (terminating) break;
       await Promise.race([pipeDone, delay(200)]);
       envPipe?.destroy();
       const dump = Buffer.concat(chunks).toString('utf8');
@@ -177,7 +241,13 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
       if (Object.keys(captured).length > 0) env = captured;
       system(`oneoff ${resolved.name} done`);
     }
+    if (!terminating) {
+      system('boot complete', 'boot');
+      // the run lives while its services do; a signal or a dying keepalive ends it
+      if (keepalive.length > 0) await stopped;
+    }
   } finally {
     teardown();
   }
+  return exitCode;
 }

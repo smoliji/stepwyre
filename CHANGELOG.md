@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ready` on keepalive steps: a probe script that gates the next step, with
+  `interval` and `timeout`, and `ready: nested` for sub-harness steps
+- `boot complete` and `keepalive <name> ready` events carry a `kind` field in
+  `--json` output and through the envelope protocol
+
+### Changed
+
+- The run now lives after the boot while a keepalive step lives, and ends when
+  the last one exits. A keepalive that exits on its own ends the run; its exit
+  code decides the stepwyre exit code.
+
 ## [0.1.0] - 2026-08-31
 
 ### Added

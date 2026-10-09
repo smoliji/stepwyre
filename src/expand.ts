@@ -1,4 +1,4 @@
-import type { BootStep, Lifecycle } from './config.js';
+import type { BootStep, Lifecycle, Ready } from './config.js';
 import { freePort } from './freePort.js';
 
 export interface ResolvedStep {
@@ -6,6 +6,7 @@ export interface ResolvedStep {
   script: string;
   lifecycle: Lifecycle;
   logs: 'json' | undefined;
+  ready: Ready | undefined;
   props: Record<string, string>;
 }
 
@@ -146,13 +147,19 @@ export async function resolveStep(
 ): Promise<ResolvedStep> {
   const self: Record<string, string> = {};
   for (const key of Object.keys(step)) {
+    if (key === 'ready') continue;
     self[key] = await expand(String(step[key]), self, registry, env);
   }
+  const ready =
+    step.ready && 'script' in step.ready
+      ? { ...step.ready, script: await expand(step.ready.script, self, registry, env) }
+      : step.ready;
   return {
     name: self.name!,
     script: self.script!,
     lifecycle: step.lifecycle,
     logs: step.logs,
+    ready,
     props: self,
   };
 }

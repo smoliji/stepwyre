@@ -26,11 +26,13 @@ async function main(paths: string[]): Promise<void> {
     : process.stdout.isTTY && process.stdin.isTTY
       ? createInkSink({ stepCount: config.boot.length, paths })
       : new StreamSink(config.boot.map((step) => step.name));
+  let code = 1;
   try {
-    await runHarness(config, sink);
+    code = await runHarness(config, sink);
   } finally {
     await sink.close();
   }
+  process.exit(code);
 }
 
 main(configPaths).catch((err) => {

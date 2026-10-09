@@ -213,33 +213,6 @@ test('nested harness envelopes compose step names in the outer sink', async () =
   }
 });
 
-test('a keepalive dying mid-run is reported without failing the boot', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'harness-keepalive-exit-'));
-  try {
-    const cfgPath = await configFile(
-      dir,
-      [
-        'boot:',
-        '  - name: keep',
-        '    lifecycle: keepalive',
-        '    script: exit 1',
-        '  - name: after',
-        '    script: echo alive',
-        '',
-      ].join('\n'),
-    );
-    const { stdout, stderr } = await run(
-      process.execPath,
-      ['--import', 'tsx', 'src/index.ts', cfgPath],
-      { env: { ...process.env, NO_COLOR: '1' }, timeout: 30000 },
-    );
-    assert.match(stdout, /alive/);
-    assert.match(stderr, /keepalive keep exited/);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
 async function pgrepFound(pattern: string): Promise<boolean> {
   try {
     const { stdout } = await run('pgrep', ['-f', pattern]);
@@ -311,6 +284,200 @@ test('SIGTERM tears down the in-flight oneoff child, not just keepalives', async
 
     const stillRunning = await waitUntil(() => pgrepFound(marker), 3000, 100);
     assert.equal(stillRunning, false, 'oneoff child should be killed on teardown');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+const harness = (cfgPath: string, extra: string[] = []) =>
+  run(process.execPath, ['--import', 'tsx', 'src/index.ts', ...extra, cfgPath], {
+    env: { ...process.env, NO_COLOR: '1' },
+    timeout: 30000,
+  });
+
+type Failure = Error & { code?: number; stdout: string; stderr: string };
+
+test('a keepalive dying outside teardown ends the run with a failure', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-keepalive-exit-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: keep',
+        '    lifecycle: keepalive',
+        '    script: exit 1',
+        '  - name: after',
+        '    script: sleep 3',
+        '',
+      ].join('\n'),
+    );
+    const started = Date.now();
+    const result = await harness(cfgPath).catch((err: Failure) => err);
+    assert.ok(result instanceof Error, 'harness should exit non-zero');
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /keepalive keep exited \(1\)/);
+    assert.ok(Date.now() - started < 2500, 'the in-flight oneoff should be torn down');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the run stays alive after boot while a keepalive lives and ends when it exits', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-linger-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: svc',
+        '    lifecycle: keepalive',
+        '    script: sleep 1',
+        '  - name: last',
+        '    script: echo booted',
+        '',
+      ].join('\n'),
+    );
+    const started = Date.now();
+    const { stdout, stderr } = await harness(cfgPath);
+    assert.match(stdout, /booted/);
+    assert.match(stderr, /stepwyre\s+\| boot complete/);
+    assert.ok(Date.now() - started >= 900, 'run should outlive the boot while svc sleeps');
+    assert.match(stderr, /keepalive svc exited \(0\)/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('ready script blocks the next step until it passes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-ready-'));
+  try {
+    const flag = join(dir, 'up');
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: svc',
+        '    lifecycle: keepalive',
+        '    ready:',
+        `      script: test -f ${flag}`,
+        '      interval: 0.1',
+        '    script: |',
+        '      sleep 0.6',
+        `      touch ${flag}`,
+        '      sleep 1',
+        '  - name: next',
+        `    script: test -f ${flag} && echo saw-flag`,
+        '',
+      ].join('\n'),
+    );
+    const { stdout, stderr } = await harness(cfgPath);
+    assert.match(stdout, /saw-flag/);
+    assert.match(stderr, /keepalive svc ready/);
+    assert.match(stderr, /boot complete/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('ready timeout fails the boot', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-ready-timeout-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: svc',
+        '    lifecycle: keepalive',
+        '    ready:',
+        '      script: false',
+        '      interval: 0.1',
+        '      timeout: 0.5',
+        '    script: sleep 30',
+        '  - name: never',
+        '    script: echo unreachable',
+        '',
+      ].join('\n'),
+    );
+    const result = await harness(cfgPath).catch((err: Failure) => err);
+    assert.ok(result instanceof Error, 'harness should exit non-zero');
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /keepalive svc not ready after 0.5s/);
+    assert.doesNotMatch(result.stdout, /unreachable/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a keepalive dying before ready fails the boot at once', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-ready-died-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: svc',
+        '    lifecycle: keepalive',
+        '    ready:',
+        '      script: false',
+        '      timeout: 20',
+        '    script: exit 3',
+        '',
+      ].join('\n'),
+    );
+    const started = Date.now();
+    const result = await harness(cfgPath).catch((err: Failure) => err);
+    assert.ok(result instanceof Error, 'harness should exit non-zero');
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /keepalive svc exited \(3\)/);
+    assert.ok(Date.now() - started < 5000, 'should not wait for the ready timeout');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('ready: nested waits for the sub-harness boot and json carries kind', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-ready-nested-'));
+  try {
+    const innerPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: slow',
+        '    script: sleep 0.6',
+        '  - name: svc',
+        '    lifecycle: keepalive',
+        '    script: sleep 1',
+        '',
+      ].join('\n'),
+    );
+    const outerPath = join(dir, 'outer.yaml');
+    await writeFile(
+      outerPath,
+      [
+        'boot:',
+        '  - name: sub',
+        '    lifecycle: keepalive',
+        '    ready: nested',
+        `    script: ${process.execPath} --import tsx src/index.ts ${innerPath}`,
+        '  - name: after',
+        '    script: echo after-sub',
+        '',
+      ].join('\n'),
+    );
+    const { stdout } = await harness(outerPath, ['--json']);
+    const envelopes = stdout
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const innerBoot = envelopes.findIndex((e) => e.step === 'sub/stepwyre' && e.kind === 'boot');
+    const subReady = envelopes.findIndex((e) => e.step === 'stepwyre' && e.kind === 'ready');
+    const afterLine = envelopes.findIndex((e) => e.step === 'after' && e.line === 'after-sub');
+    const outerBoot = envelopes.findIndex((e) => e.step === 'stepwyre' && e.kind === 'boot');
+    assert.ok(innerBoot >= 0, 'inner boot event');
+    assert.ok(subReady > innerBoot, 'sub ready after inner boot');
+    assert.ok(afterLine > subReady, 'after runs once sub is ready');
+    assert.ok(outerBoot > afterLine, 'outer boot complete last');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

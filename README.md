@@ -45,7 +45,9 @@ Run the log viewer demo: `node dist/harness.js examples/tui-demo.yaml`
 ## Features
 
 - stepwyre runs the boot steps in sequence. A step has a `oneoff` or a
-  `keepalive` lifecycle.
+  `keepalive` lifecycle. The run lives while a keepalive step lives.
+- A `ready` probe on a keepalive step holds the boot until the service answers.
+  `boot complete` tells scripts that the stack is up.
 - `${FREE_PORT}` allocates a free TCP port. `${step.prop}` reads a value from
   an earlier step. `${ENV.PORT ?? FREE_PORT}` is a fallback chain.
 - The environment that a `oneoff` step exports flows into the steps that follow.

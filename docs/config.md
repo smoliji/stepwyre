@@ -10,7 +10,45 @@ steps in order. Each step is a mapping:
     steps that follow. When the last command of its script exits non-zero, the
     boot fails. You do not need an explicit `exit`.
   - A `keepalive` step starts in the background and stays running. stepwyre stops it on teardown.
+- `ready` is optional and only valid on a `keepalive` step. See [Readiness](#readiness).
 - Each other key (for example `port`) becomes a resolved prop on the step. Later steps reference it as `${name.port}`.
+
+## Run lifetime
+
+stepwyre runs the steps in order. When the last step is done, it emits
+`boot complete`. The run then lives while at least one `keepalive` step lives.
+Ctrl+C, SIGTERM, or a failing step ends the run: stepwyre stops all keepalive
+children and exits. A keepalive child that exits on its own also ends the run.
+The exit code is 0 when the child exited with 0, otherwise 1.
+
+## Readiness
+
+A `keepalive` step can declare when it is ready. The next step waits for it.
+
+```yaml
+- name: postgres
+  port: ${FREE_PORT}
+  lifecycle: keepalive
+  ready:
+    script: pg_isready -h localhost -p ${port}
+    interval: 1
+    timeout: 60
+  script: docker run --rm -p ${port}:5432 postgres:16
+```
+
+- `script` runs under `bash -c` with the step environment. `${...}` expansion
+  applies, so it can use the step props. stepwyre runs it every `interval`
+  seconds (default 1) until it exits 0.
+- `timeout` (default 60) is in seconds. When the probe has not passed by then,
+  the boot fails. When the keepalive child exits before the probe passes, the
+  boot fails at once.
+- `ready: nested` is for a step that runs another stepwyre. The step is ready
+  when the nested run emits `boot complete`. There is no timeout; the nested
+  run enforces its own.
+
+A ready step emits `keepalive <name> ready`. Both this line and `boot complete`
+carry a `kind` field in [JSON output](json-output.md), so scripts can wait for
+them without matching text.
 
 ## Multiple config files
 

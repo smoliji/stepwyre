@@ -10,7 +10,12 @@
 #                - oneoff: runs to completion; any env it exports flows into
 #                  the following steps.
 #                - keepalive: started in the background and left running; the
-#                  harness kills it on teardown.
+#                  harness kills it on teardown. After the boot, the run lives
+#                  while a keepalive lives.
+#     ready      keepalive only. A mapping with a 'script' that stepwyre runs
+#                every 'interval' seconds (default 1) until it exits 0; the
+#                next step waits for it. After 'timeout' seconds (default 60)
+#                the boot fails. 'ready: nested' waits for a sub-harness boot.
 #     port       (and any other extra key) becomes a resolved prop on the step,
 #                referenceable later as ${name.port}.
 #
@@ -21,20 +26,32 @@
 
 boot:
   # Two keepalive "tunnels" stand in for real port-forwards (no gcloud here,
-  # just a plain sleep). Each grabs a free port and prints it.
+  # just a plain sleep). Each grabs a free port and prints it. They exit after
+  # a few seconds so that the demo run terminates on its own.
+  # db_tunnel takes a moment to come up; its ready probe holds the boot until
+  # the marker file exists.
   - name: db_tunnel
     port: ${FREE_PORT}
+    marker: /tmp/harness-db_tunnel-${port}
     lifecycle: keepalive
+    ready:
+      script: test -f ${marker}
+      interval: 0.2
+      timeout: 10
     script: |
+      echo "db_tunnel warming up on ${port}"
+      sleep 0.5
+      touch ${marker}
       echo "db_tunnel listening on ${port}"
-      exec sleep 30
+      sleep 3
+      rm -f ${marker}
 
   - name: cache_tunnel
     port: ${FREE_PORT}
     lifecycle: keepalive
     script: |
       echo "cache_tunnel listening on ${port}"
-      exec sleep 30
+      exec sleep 3
 
   # A oneoff step that writes a config file and exports its path. The export
   # survives into later steps because oneoff steps hand their env forward.

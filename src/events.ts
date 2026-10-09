@@ -1,11 +1,14 @@
 import type { JsonLog } from './jsonLog.js';
 
+export type EventKind = 'ready' | 'boot';
+
 export interface LogEvent {
   step: string;
   stream: 'stdout' | 'stderr' | 'system';
   line: string;
   ts: number;
   json?: JsonLog;
+  kind?: EventKind;
 }
 
 export const MAX_LINE = 32768;

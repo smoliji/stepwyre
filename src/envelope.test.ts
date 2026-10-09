@@ -45,3 +45,16 @@ test('falls back to Date.now() for a non-numeric ts', () => {
 test('rejects an envelope without a line', () => {
   assert.equal(parseEnvelope('{"@log":1,"step":"x","stream":"stdout"}'), undefined);
 });
+
+test('kind round-trips and is absent when the event has none', () => {
+  const boot = parseEnvelope(
+    envelope({ step: 'stepwyre', stream: 'system', line: 'boot complete', ts: 1, kind: 'boot' }),
+  );
+  assert.equal(boot?.kind, 'boot');
+  const plain = parseEnvelope(envelope({ step: 'x', stream: 'stdout', line: 'y', ts: 1 }));
+  assert.equal(plain?.kind, undefined);
+  assert.equal(
+    parseEnvelope('{"@log":1,"step":"x","stream":"system","line":"y","kind":"weird"}')?.kind,
+    undefined,
+  );
+});
