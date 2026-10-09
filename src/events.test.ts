@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LineSplitter, MAX_LINE } from './events.js';
+import { LineSplitter, MAX_BUFFER } from './events.js';
 
 test('splits complete lines and keeps the partial rest', () => {
   const splitter = new LineSplitter();
@@ -20,19 +20,19 @@ test('strips carriage returns from CRLF input', () => {
   assert.deepEqual(splitter.push('a\r\nb\r\n'), ['a', 'b']);
 });
 
-test('force-flushes a line exceeding MAX_LINE', () => {
+test('force-flushes a line exceeding MAX_BUFFER', () => {
   const splitter = new LineSplitter();
-  const lines = splitter.push('x'.repeat(MAX_LINE + 5));
+  const lines = splitter.push('x'.repeat(MAX_BUFFER + 5));
   assert.equal(lines.length, 1);
-  assert.equal(lines[0]!.length, MAX_LINE);
+  assert.equal(lines[0]!.length, MAX_BUFFER);
   assert.deepEqual(splitter.flush(), ['xxxxx']);
 });
 
-test('truncates a completed line exceeding MAX_LINE to the cap', () => {
+test('truncates a completed line exceeding MAX_BUFFER to the cap', () => {
   const splitter = new LineSplitter();
-  const lines = splitter.push('x'.repeat(MAX_LINE + 100) + '\ny\n');
+  const lines = splitter.push('x'.repeat(MAX_BUFFER + 100) + '\ny\n');
   assert.deepEqual(
     lines.map((line) => line.length),
-    [MAX_LINE, 1],
+    [MAX_BUFFER, 1],
   );
 });

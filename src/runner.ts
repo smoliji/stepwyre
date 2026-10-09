@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Config } from './config.js';
 import { resolveStep, type ResolvedStep, type Registry } from './expand.js';
-import { LineSplitter, type EventKind, type LogEvent } from './events.js';
+import { LineSplitter, MAX_LINE, type EventKind, type LogEvent } from './events.js';
 import { parseJsonLog } from './jsonLog.js';
 import { parseEnvelope } from './envelope.js';
 import type { Sink } from './sink.js';
@@ -59,9 +59,14 @@ function attachOutput(
         if (wrapped.kind === 'boot' && wrapped.step === 'stepwyre') onNestedBoot?.();
         return;
       }
-      const event: LogEvent = { step: step.name, stream, line, ts: Date.now() };
+      const event: LogEvent = {
+        step: step.name,
+        stream,
+        line: line.slice(0, MAX_LINE),
+        ts: Date.now(),
+      };
       if (step.logs === 'json') {
-        const json = parseJsonLog(line);
+        const json = parseJsonLog(event.line);
         if (json) event.json = json;
       }
       sink.event(event);

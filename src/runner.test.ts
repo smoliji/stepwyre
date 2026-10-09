@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { MAX_LINE } from './events.js';
 
 const run = promisify(execFile);
 
@@ -152,6 +153,49 @@ test('steps see CI=true unless the caller already set CI', async () => {
       timeout: 30000,
     });
     assert.match(respected.stdout, /ci=nope/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a nested line at the plain cap still arrives as one unwrapped event', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-nested-long-'));
+  try {
+    const innerPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: app',
+        `    script: head -c ${MAX_LINE + 1000} /dev/zero | tr '\\0' x; echo`,
+        '',
+      ].join('\n'),
+    );
+    const outerPath = join(dir, 'outer.yaml');
+    await writeFile(
+      outerPath,
+      [
+        'boot:',
+        '  - name: sub',
+        `    script: ${process.execPath} --import tsx src/index.ts ${innerPath}`,
+        '',
+      ].join('\n'),
+    );
+
+    const { stdout } = await run(
+      process.execPath,
+      ['--import', 'tsx', 'src/index.ts', '--json', outerPath],
+      { env: { ...process.env, LOGS_JSON: '1' }, timeout: 30000 },
+    );
+    const envelopes = stdout
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const long = envelopes.filter((candidate) => candidate.step === 'sub/app');
+    assert.equal(long.length, 1);
+    assert.equal((long[0]!.line as string).length, MAX_LINE);
+    assert.ok(
+      !envelopes.some((candidate) => candidate.step === 'sub' && candidate.stream === 'stdout'),
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

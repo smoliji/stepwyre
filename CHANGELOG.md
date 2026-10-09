@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the last one exits. A keepalive that exits on its own ends the run; its exit
   code decides the stepwyre exit code.
 
+### Fixed
+
+- A nested run's envelope longer than the 32 KiB line cap (a child line right
+  at the cap) was cut and shown as raw JSON under the parent step. The cap now
+  applies to plain lines only; the stream buffer has a 1 MiB hard limit.
+
 ## [0.1.0] - 2026-08-31
 
 ### Added

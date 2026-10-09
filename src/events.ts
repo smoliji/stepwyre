@@ -29,7 +29,10 @@ export interface LogEvent {
   code?: number | string | null;
 }
 
+/** cap for a plain output line; envelopes from a nested run may be longer */
 export const MAX_LINE = 32768;
+/** hard cap on buffered input per stream, so a stream without newlines cannot grow unbounded */
+export const MAX_BUFFER = 1024 * 1024;
 
 export class LineSplitter {
   private rest = '';
@@ -42,20 +45,20 @@ export class LineSplitter {
     while ((newline = this.rest.indexOf('\n', start)) !== -1) {
       let line = this.rest.slice(start, newline);
       if (line.endsWith('\r')) line = line.slice(0, -1);
-      lines.push(line.slice(0, MAX_LINE));
+      lines.push(line.slice(0, MAX_BUFFER));
       start = newline + 1;
     }
     this.rest = this.rest.slice(start);
-    while (this.rest.length >= MAX_LINE) {
-      lines.push(this.rest.slice(0, MAX_LINE));
-      this.rest = this.rest.slice(MAX_LINE);
+    while (this.rest.length >= MAX_BUFFER) {
+      lines.push(this.rest.slice(0, MAX_BUFFER));
+      this.rest = this.rest.slice(MAX_BUFFER);
     }
     return lines;
   }
 
   flush(): string[] {
     if (this.rest === '') return [];
-    const line = this.rest.slice(0, MAX_LINE);
+    const line = this.rest.slice(0, MAX_BUFFER);
     this.rest = '';
     return [line];
   }
