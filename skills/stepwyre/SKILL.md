@@ -10,8 +10,9 @@ argument-hint: "[config.yaml ...]"
 `stepwyre` starts a local stack from YAML: ordered bash steps, free port
 allocation, env passing between steps, background services with ready probes,
 and a machine-readable state. Full docs are in `docs/` next to this plugin
-(`config.md`, `json-output.md`, `state.md`); the binary comes from
-`npm install -g stepwyre`, or `pnpm link --global` in a checkout.
+(`config.md`, `json-output.md`, `state.md`). The binary is `stepwyre` on
+PATH; it is not on npm yet, so it comes from `pnpm build && pnpm link --global`
+in a checkout of github.com/smoliji/stepwyre.
 
 ## Config essentials
 
