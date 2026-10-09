@@ -1,6 +1,21 @@
 {
   "name": "stepwyre",
   "version": "0.1.0",
+  "description": "Boot orchestrator: wire your stack, step by step. YAML boot steps with port allocation, env passing, background services, and a TUI log viewer.",
+  "license": "MIT",
+  "author": "Jiří Šmolík",
+  "repository": "github:smoliji/stepwyre",
+  "homepage": "https://smoliji.github.io/stepwyre/",
+  "bugs": "https://github.com/smoliji/stepwyre/issues",
+  "keywords": [
+    "boot",
+    "orchestrator",
+    "dev-environment",
+    "yaml",
+    "process-manager",
+    "tui",
+    "log-viewer"
+  ],
   "type": "module",
   "bin": {
     "stepwyre": "dist/harness.js"
@@ -12,15 +27,22 @@
     "build": "esbuild src/index.ts --bundle --minify --platform=node --format=esm --target=node22 --jsx=automatic --packages=external --outfile=dist/harness.js",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
+    "format": "prettier --write src",
     "harness": "node dist/harness.js"
   },
   "engines": {
     "node": ">=22"
   },
+  "prettier": {
+    "singleQuote": true,
+    "printWidth": 100
+  },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.18",
     "esbuild": "^0.28.1",
+    "prettier": "^3.9.6",
     "tsx": "^4.23.12",
     "typescript": "^7.0.0"
   },
