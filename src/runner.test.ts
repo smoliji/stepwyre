@@ -482,3 +482,113 @@ test('ready: nested waits for the sub-harness boot and json carries kind', async
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+function spawnHarness(cfgPath: string) {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
+    env: { ...process.env, NO_COLOR: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const output = { stdout: '', stderr: '' };
+  child.stdout?.setEncoding('utf8');
+  child.stderr?.setEncoding('utf8');
+  child.stdout?.on('data', (chunk: string) => {
+    output.stdout += chunk;
+  });
+  child.stderr?.on('data', (chunk: string) => {
+    output.stderr += chunk;
+  });
+  const exit = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
+  return { child, output, exit };
+}
+
+test('teardown waits for a keepalive that shuts down slowly', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-slow-stop-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: slow',
+        '    lifecycle: keepalive',
+        '    script: |',
+        "      trap 'echo draining; sleep 0.7; echo drained; exit 0' TERM",
+        '      echo up',
+        '      while :; do sleep 0.1; done',
+        '',
+      ].join('\n'),
+    );
+    const { child, output, exit } = spawnHarness(cfgPath);
+    await waitUntil(() => Promise.resolve(output.stderr.includes('boot complete')), 8000);
+    child.kill('SIGTERM');
+    assert.equal(await exit, 143);
+    assert.match(output.stdout, /drained/);
+    assert.match(output.stderr, /stopping 1 step/);
+    assert.match(output.stderr, /keepalive slow exited \(0\)/);
+    assert.match(output.stderr, /teardown complete/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('teardown kills a keepalive that ignores SIGTERM after stop_timeout', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-stubborn-'));
+  const marker = `sleep ${400000 + process.pid}`;
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: stubborn',
+        '    lifecycle: keepalive',
+        '    stop_timeout: 0.5',
+        '    script: |',
+        "      trap '' TERM",
+        `      ${marker} &`,
+        '      wait',
+        '',
+      ].join('\n'),
+    );
+    const { child, output, exit } = spawnHarness(cfgPath);
+    await waitUntil(() => Promise.resolve(output.stderr.includes('boot complete')), 8000);
+    await waitUntil(() => pgrepFound(marker), 4000);
+    const started = Date.now();
+    child.kill('SIGTERM');
+    assert.equal(await exit, 143);
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed >= 400 && elapsed < 5000, `teardown took ${elapsed}ms`);
+    assert.match(output.stderr, /killed stubborn after 0.5s/);
+    const gone = await waitUntil(async () => !(await pgrepFound(marker)), 3000, 100);
+    assert.equal(gone, true, 'process group should be killed');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a second SIGINT during teardown kills at once', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-double-int-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: stubborn',
+        '    lifecycle: keepalive',
+        '    stop_timeout: 30',
+        '    script: |',
+        "      trap '' INT TERM",
+        '      while :; do sleep 0.1; done',
+        '',
+      ].join('\n'),
+    );
+    const { child, output, exit } = spawnHarness(cfgPath);
+    await waitUntil(() => Promise.resolve(output.stderr.includes('boot complete')), 8000);
+    child.kill('SIGINT');
+    await waitUntil(() => Promise.resolve(output.stderr.includes('stopping 1 step')), 4000);
+    const started = Date.now();
+    child.kill('SIGINT');
+    assert.equal(await exit, 130);
+    assert.ok(Date.now() - started < 3000, 'second signal should not wait for the grace period');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -1,4 +1,4 @@
-import type { BootStep, Lifecycle, Ready } from './config.js';
+import { DEFAULT_STOP_TIMEOUT, type BootStep, type Lifecycle, type Ready } from './config.js';
 import { freePort } from './freePort.js';
 
 export interface ResolvedStep {
@@ -7,6 +7,7 @@ export interface ResolvedStep {
   lifecycle: Lifecycle;
   logs: 'json' | undefined;
   ready: Ready | undefined;
+  stopTimeout: number;
   props: Record<string, string>;
 }
 
@@ -147,7 +148,7 @@ export async function resolveStep(
 ): Promise<ResolvedStep> {
   const self: Record<string, string> = {};
   for (const key of Object.keys(step)) {
-    if (key === 'ready') continue;
+    if (key === 'ready' || key === 'stop_timeout') continue;
     self[key] = await expand(String(step[key]), self, registry, env);
   }
   const ready =
@@ -160,6 +161,7 @@ export async function resolveStep(
     lifecycle: step.lifecycle,
     logs: step.logs,
     ready,
+    stopTimeout: step.stop_timeout ?? DEFAULT_STOP_TIMEOUT,
     props: self,
   };
 }

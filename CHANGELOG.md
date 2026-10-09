@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Teardown waits for the children: SIGTERM to all at once, SIGKILL after
+  `stop_timeout` seconds (default 10, per keepalive step). A second Ctrl+C
+  kills at once.
 - The run now lives after the boot while a keepalive step lives, and ends when
   the last one exits. A keepalive that exits on its own ends the run; its exit
   code decides the stepwyre exit code.

@@ -11,6 +11,7 @@ export interface BootStep {
   lifecycle: Lifecycle;
   logs?: 'json';
   ready?: Ready;
+  stop_timeout?: number;
   [key: string]: unknown;
 }
 
@@ -24,6 +25,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 const DEFAULT_READY_INTERVAL = 1;
 const DEFAULT_READY_TIMEOUT = 60;
+export const DEFAULT_STOP_TIMEOUT = 10;
 
 function seconds(value: unknown, fallback: number, label: string): number {
   if (value === undefined) return fallback;
@@ -89,6 +91,11 @@ export function loadConfig(path: string): Config {
     const step = { ...item, lifecycle } as BootStep;
     if (item.ready !== undefined) {
       step.ready = parseReady(item.ready, lifecycle, `boot step '${name}' (${index}) ready`);
+    }
+    if (item.stop_timeout !== undefined) {
+      const label = `boot step '${name}' (${index}) stop_timeout`;
+      if (lifecycle !== 'keepalive') throw new Error(`${label} is only valid on a keepalive step`);
+      step.stop_timeout = seconds(item.stop_timeout, DEFAULT_STOP_TIMEOUT, label);
     }
     return step;
   });

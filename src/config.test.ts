@@ -164,3 +164,28 @@ test('rejects a non-positive ready timeout', () => {
     /ready.*timeout/,
   );
 });
+
+test('accepts stop_timeout in seconds on a keepalive step', () => {
+  const config = loadConfig(
+    configFile(
+      'boot:\n  - name: a\n    lifecycle: keepalive\n    stop_timeout: 30\n    script: sleep 1\n',
+    ),
+  );
+  assert.equal(config.boot[0]!.stop_timeout, 30);
+});
+
+test('rejects stop_timeout on a oneoff step and non-positive values', () => {
+  assert.throws(
+    () => loadConfig(configFile('boot:\n  - name: a\n    stop_timeout: 5\n    script: echo\n')),
+    /stop_timeout.*keepalive/,
+  );
+  assert.throws(
+    () =>
+      loadConfig(
+        configFile(
+          'boot:\n  - name: a\n    lifecycle: keepalive\n    stop_timeout: -1\n    script: sleep 1\n',
+        ),
+      ),
+    /stop_timeout/,
+  );
+});

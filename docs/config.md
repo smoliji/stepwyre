@@ -11,15 +11,22 @@ steps in order. Each step is a mapping:
     boot fails. You do not need an explicit `exit`.
   - A `keepalive` step starts in the background and stays running. stepwyre stops it on teardown.
 - `ready` is optional and only valid on a `keepalive` step. See [Readiness](#readiness).
+- `stop_timeout` is optional and only valid on a `keepalive` step. See [Run lifetime](#run-lifetime).
 - Each other key (for example `port`) becomes a resolved prop on the step. Later steps reference it as `${name.port}`.
 
 ## Run lifetime
 
 stepwyre runs the steps in order. When the last step is done, it emits
 `boot complete`. The run then lives while at least one `keepalive` step lives.
-Ctrl+C, SIGTERM, or a failing step ends the run: stepwyre stops all keepalive
-children and exits. A keepalive child that exits on its own also ends the run.
-The exit code is 0 when the child exited with 0, otherwise 1.
+Ctrl+C, SIGTERM, or a failing step ends the run. A keepalive child that exits
+on its own also ends the run. The exit code is 0 when the child exited with 0,
+otherwise 1.
+
+On teardown stepwyre sends SIGTERM to every live child at once and waits for
+them. A child that is still running after `stop_timeout` seconds (default 10)
+gets SIGKILL. Set `stop_timeout` on a keepalive step that needs longer, for
+example a docker compose stack. A second Ctrl+C during the teardown kills all
+children at once.
 
 ## Readiness
 

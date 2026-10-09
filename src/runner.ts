@@ -77,6 +77,33 @@ function attachOutput(
 
 const exitOf = (code: number | null, signal: NodeJS.Signals | null) => signal ?? code;
 
+const unref = { ref: false };
+
+interface Tracked {
+  name: string;
+  child: ChildProcess;
+  stopTimeout: number;
+  exited: Promise<void>;
+}
+
+function track(name: string, child: ChildProcess, stopTimeout: number): Tracked {
+  const exited = new Promise<void>((resolve) => {
+    child.once('exit', () => resolve());
+    child.once('error', () => resolve());
+  });
+  return { name, child, stopTimeout, exited };
+}
+
+const alive = ({ child }: Tracked) =>
+  child.pid !== undefined && child.exitCode === null && child.signalCode === null;
+
+function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, signal);
+  } catch {}
+}
+
 function probeOnce(
   script: string,
   env: Record<string, string>,
@@ -101,10 +128,11 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
   // human output, so step names and json records survive the pipe
   env.LOGS_JSON ??= '1';
   const registry: Registry = {};
-  const keepalive: ChildProcess[] = [];
+  const keepalive: Tracked[] = [];
   let tearingDown = false;
-  let current: ChildProcess | undefined;
+  let current: Tracked | undefined;
   let terminating = false;
+  let teardownDone: Promise<void> | undefined;
   let exitCode = 0;
   let stop!: () => void;
   const stopped = new Promise<void>((resolve) => {
@@ -117,18 +145,33 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
     sink.event(event);
   };
 
-  const teardown = () => {
-    tearingDown = true;
-    for (const child of keepalive) {
-      if (child.pid === undefined) continue;
-      try {
-        process.kill(-child.pid, 'SIGTERM');
-      } catch {}
+  const stopOne = async (tracked: Tracked) => {
+    signalGroup(tracked.child, 'SIGTERM');
+    const expired = delay(tracked.stopTimeout * 1000, 'expired', unref);
+    if ((await Promise.race([tracked.exited, expired])) === 'expired') {
+      signalGroup(tracked.child, 'SIGKILL');
+      system(`killed ${tracked.name} after ${tracked.stopTimeout}s`);
+      await tracked.exited;
     }
-    if (current?.pid !== undefined) {
-      try {
-        process.kill(-current.pid, 'SIGTERM');
-      } catch {}
+  };
+
+  // SIGTERM every live child at once, then wait for them with their own grace
+  const teardown = () => {
+    if (teardownDone) return teardownDone;
+    tearingDown = true;
+    const live = [...keepalive, ...(current ? [current] : [])].filter(alive);
+    teardownDone = (async () => {
+      if (live.length === 0) return;
+      system(`stopping ${live.length} step${live.length === 1 ? '' : 's'}`);
+      await Promise.all(live.map(stopOne));
+      system('teardown complete');
+    })();
+    return teardownDone;
+  };
+
+  const killAll = () => {
+    for (const tracked of [...keepalive, ...(current ? [current] : [])]) {
+      signalGroup(tracked.child, 'SIGKILL');
     }
   };
 
@@ -136,12 +179,22 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
     if (terminating) return;
     terminating = true;
     exitCode = code;
-    teardown();
+    void teardown();
     stop();
   };
 
-  process.once('SIGINT', () => finish(130));
-  process.once('SIGTERM', () => finish(143));
+  const onSignal = (code: number) => {
+    if (terminating) {
+      // a second signal means the user is done waiting
+      killAll();
+      void sink.close().then(() => process.exit(exitCode));
+      return;
+    }
+    finish(code);
+  };
+
+  process.on('SIGINT', () => onSignal(130));
+  process.on('SIGTERM', () => onSignal(143));
 
   const awaitReady = async (step: ResolvedStep, nestedBoot: Promise<void>) => {
     const ready = step.ready;
@@ -159,7 +212,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
         if (detail) system(`ready probe for ${step.name}: ${detail}`);
         throw new Error(`keepalive ${step.name} not ready after ${ready.timeout}s`);
       }
-      await Promise.race([delay(ready.interval * 1000), stopped]);
+      await Promise.race([delay(ready.interval * 1000, undefined, unref), stopped]);
     }
   };
 
@@ -181,15 +234,14 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
         });
         attachOutput(child, resolved, sink, bootSeen);
         child.once('exit', (code, exitSignal) => {
-          if (tearingDown) return;
           system(`keepalive ${resolved.name} exited (${exitOf(code, exitSignal)})`);
-          finish(code === 0 ? 0 : 1);
+          if (!tearingDown) finish(code === 0 ? 0 : 1);
         });
         child.once('error', (err) => {
           system(`keepalive ${resolved.name} failed to start: ${err.message}`);
-          finish(1);
+          if (!tearingDown) finish(1);
         });
-        keepalive.push(child);
+        keepalive.push(track(resolved.name, child, resolved.stopTimeout));
         system(`keepalive ${resolved.name} started`);
         await awaitReady(resolved, nestedBoot);
         if (terminating) break;
@@ -209,7 +261,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
           detached: true,
         },
       );
-      current = child;
+      current = track(resolved.name, child, resolved.stopTimeout);
       attachOutput(child, resolved, sink);
       const fd3 = child.stdio[3];
       const envPipe = fd3 instanceof Readable ? fd3 : null;
@@ -247,7 +299,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<number> {
       if (keepalive.length > 0) await stopped;
     }
   } finally {
-    teardown();
+    await teardown();
   }
   return exitCode;
 }
