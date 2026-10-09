@@ -1,15 +1,11 @@
-export interface JsonLogLike {
-  message: string;
-  severity: 'info' | 'warn' | 'error';
-  pretty: string;
-}
+import type { JsonLog } from './jsonLog.js';
 
 export interface LogEvent {
   step: string;
   stream: 'stdout' | 'stderr' | 'system';
   line: string;
   ts: number;
-  json?: JsonLogLike;
+  json?: JsonLog;
 }
 
 export const MAX_LINE = 32768;

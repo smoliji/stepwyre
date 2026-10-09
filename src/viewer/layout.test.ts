@@ -36,7 +36,10 @@ test('body lines hard-wrap to width minus indent', () => {
   };
   const rows = layout([wide], new Set([3]), 10 + BODY_INDENT);
   const bodies = rows.filter((row) => row.kind === 'body');
-  assert.deepEqual(bodies.map((row) => row.text.trimStart()), ['a'.repeat(10), 'a'.repeat(10)]);
+  assert.deepEqual(
+    bodies.map((row) => row.text.trimStart()),
+    ['a'.repeat(10), 'a'.repeat(10)],
+  );
 });
 
 test('stripAnsi removes SGR and CSI sequences but keeps plain brackets', () => {

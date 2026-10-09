@@ -22,8 +22,7 @@ export class StreamSink implements Sink {
   event(event: LogEvent): void {
     const target = event.stream === 'stdout' ? this.out : this.err;
     // composed nested names (sub/step) can outgrow the pad — keep a separator
-    const padded =
-      event.step.length >= this.pad ? `${event.step} ` : event.step.padEnd(this.pad);
+    const padded = event.step.length >= this.pad ? `${event.step} ` : event.step.padEnd(this.pad);
     const prefix = colorEnabled(target) ? styleText(stepColor(event.step), padded) : padded;
     const text = event.json ? event.json.message : event.line;
     target.write(`${prefix}| ${text}\n`);

@@ -1,5 +1,9 @@
 import type { DisplayRow, ViewEntry } from './layout.js';
 
+export function expandMarker(entry: ViewEntry, expanded: ReadonlySet<number>): string {
+  return entry.json ? (expanded.has(entry.id) ? '▾ ' : '▸ ') : '';
+}
+
 export function dumpLines(
   rows: DisplayRow[],
   byId: ReadonlyMap<number, ViewEntry>,
@@ -14,8 +18,7 @@ export function dumpLines(
       lines.push(row.text);
       continue;
     }
-    const arrow = entry.json ? (expanded.has(entry.id) ? '▾ ' : '▸ ') : '';
-    lines.push(entry.step.padEnd(pad) + arrow + row.text);
+    lines.push(entry.step.padEnd(pad) + expandMarker(entry, expanded) + row.text);
   }
   return lines;
 }

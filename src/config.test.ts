@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after } from 'node:test';
-import { loadConfig } from './config.js';
+import { loadConfig, loadConfigs } from './config.js';
 
 const tempDirs: string[] = [];
 after(() => {
@@ -14,13 +14,15 @@ after(() => {
 function configFile(yaml: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'harness-test-'));
   tempDirs.push(dir);
-  const path = join(dir, 'harness.yaml');
+  const path = join(dir, 'stepwyre.yaml');
   writeFileSync(path, yaml);
   return path;
 }
 
 test('accepts logs: json', () => {
-  const config = loadConfig(configFile('boot:\n  - name: api\n    logs: json\n    script: echo hi\n'));
+  const config = loadConfig(
+    configFile('boot:\n  - name: api\n    logs: json\n    script: echo hi\n'),
+  );
   assert.equal(config.boot[0]!.logs, 'json');
 });
 
@@ -34,4 +36,52 @@ test('rejects unknown logs value', () => {
     () => loadConfig(configFile('boot:\n  - name: api\n    logs: xml\n    script: echo hi\n')),
     /logs/,
   );
+});
+
+test('rejects non-array boot', () => {
+  assert.throws(() => loadConfig(configFile('boot: 5\n')), /array property 'boot'/);
+});
+
+test('rejects step without name', () => {
+  assert.throws(() => loadConfig(configFile('boot:\n  - script: echo hi\n')), /string 'name'/);
+});
+
+test('rejects step without script', () => {
+  assert.throws(() => loadConfig(configFile('boot:\n  - name: api\n')), /'api' \(0\)/);
+});
+
+test('rejects unknown lifecycle value', () => {
+  assert.throws(
+    () =>
+      loadConfig(configFile('boot:\n  - name: api\n    lifecycle: forever\n    script: echo hi\n')),
+    /invalid lifecycle/,
+  );
+});
+
+test('lifecycle defaults to oneoff', () => {
+  const config = loadConfig(configFile('boot:\n  - name: api\n    script: echo hi\n'));
+  assert.equal(config.boot[0]!.lifecycle, 'oneoff');
+});
+
+test('accepts lifecycle: keepalive', () => {
+  const config = loadConfig(
+    configFile('boot:\n  - name: api\n    lifecycle: keepalive\n    script: echo hi\n'),
+  );
+  assert.equal(config.boot[0]!.lifecycle, 'keepalive');
+});
+
+test('loadConfigs merges steps in argument order', () => {
+  const config = loadConfigs([
+    configFile('boot:\n  - name: api\n    script: echo hi\n'),
+    configFile('boot:\n  - name: web\n    script: echo ho\n'),
+  ]);
+  assert.deepEqual(
+    config.boot.map((step) => step.name),
+    ['api', 'web'],
+  );
+});
+
+test('loadConfigs rejects duplicate step names', () => {
+  const file = () => configFile('boot:\n  - name: api\n    script: echo hi\n');
+  assert.throws(() => loadConfigs([file(), file()]), /duplicate step name 'api'/);
 });

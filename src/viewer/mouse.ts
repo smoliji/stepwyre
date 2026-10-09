@@ -2,8 +2,7 @@ export const MOUSE_ENABLE = '\x1b[?1002;1006h';
 export const MOUSE_DISABLE = '\x1b[?1002;1006l';
 
 export type MouseAction =
-  | { kind: 'click'; x: number; y: number }
-  | { kind: 'wheel'; delta: number };
+  { kind: 'click'; x: number; y: number } | { kind: 'wheel'; delta: number };
 
 const sgrPattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
 

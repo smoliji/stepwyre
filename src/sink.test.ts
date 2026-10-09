@@ -44,6 +44,13 @@ test('system events go to stderr with stepwyre prefix', () => {
   assert.equal(err.text(), 'stepwyre  | keepalive api started\n');
 });
 
+test('nested names longer than the pad keep a single-space separator', () => {
+  const out = capture();
+  const sink = new StreamSink(['api'], out.stream, capture().stream);
+  sink.event({ step: 'api/subsystem_with_long_name', stream: 'stdout', line: 'hello', ts: 0 });
+  assert.equal(out.text(), 'api/subsystem_with_long_name | hello\n');
+});
+
 test('close waits for pending writes to drain before resolving', async () => {
   const out = capture();
   const sink = new StreamSink(['api'], out.stream, capture().stream);

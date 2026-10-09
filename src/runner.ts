@@ -1,11 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import process from 'node:process';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { Config } from './config.js';
 import { resolveStep, type ResolvedStep, type Registry } from './expand.js';
 import { LineSplitter, type LogEvent } from './events.js';
 import { parseJsonLog } from './jsonLog.js';
-import { parseEnvelope } from './jsonSink.js';
+import { parseEnvelope } from './envelope.js';
 import type { Sink } from './sink.js';
 
 function initialEnv(): Record<string, string> {
@@ -24,10 +25,6 @@ function parseEnvDump(dump: string): Record<string, string> {
     env[entry.slice(0, eq)] = entry.slice(eq + 1);
   }
   return env;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function attachOutput(child: ChildProcess, step: ResolvedStep, sink: Sink): void {
@@ -80,13 +77,16 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
   env.LOGS_JSON ??= '1';
   const registry: Registry = {};
   const keepalive: ChildProcess[] = [];
+  let tearingDown = false;
   let current: ChildProcess | undefined;
+  let terminating = false;
 
   const system = (line: string) => {
     sink.event({ step: 'stepwyre', stream: 'system', line, ts: Date.now() });
   };
 
   const teardown = () => {
+    tearingDown = true;
     for (const child of keepalive) {
       if (child.pid === undefined) continue;
       try {
@@ -101,6 +101,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
   };
 
   const exitOnSignal = (code: number) => {
+    terminating = true;
     teardown();
     void sink.close().then(() => process.exit(code));
   };
@@ -110,6 +111,7 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
 
   try {
     for (const step of config.boot) {
+      if (terminating) return;
       const resolved = await resolveStep(step, registry, env);
       registry[resolved.name] = resolved.props;
 
@@ -120,6 +122,12 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
           detached: true,
         });
         attachOutput(child, resolved, sink);
+        child.once('exit', (code, exitSignal) => {
+          if (!tearingDown) system(`keepalive ${resolved.name} exited (${exitSignal ?? code})`);
+        });
+        child.once('error', (err) => {
+          system(`keepalive ${resolved.name} failed to start: ${err.message}`);
+        });
         keepalive.push(child);
         system(`keepalive ${resolved.name} started`);
         continue;
@@ -128,14 +136,19 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
       // capture the script's exit code before the env dump so a failing
       // last command still fails the step; the variable is unexported and
       // stays out of the captured env
-      const child = spawn('bash', ['-c', resolved.script + '\n__harness_exit=$?\nenv -0 >&3\nexit $__harness_exit'], {
-        env,
-        stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
-        detached: true,
-      });
+      const child = spawn(
+        'bash',
+        ['-c', resolved.script + '\n__harness_exit=$?\nenv -0 >&3\nexit $__harness_exit'],
+        {
+          env,
+          stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
+          detached: true,
+        },
+      );
       current = child;
       attachOutput(child, resolved, sink);
-      const envPipe = child.stdio[3] as Readable | null;
+      const fd3 = child.stdio[3];
+      const envPipe = fd3 instanceof Readable ? fd3 : null;
       const chunks: Buffer[] = [];
       // a backgrounded grandchild can inherit fd 3 and keep the pipe open
       // past the step's exit, so never block on the pipe ending
@@ -146,10 +159,14 @@ export async function runHarness(config: Config, sink: Sink): Promise<void> {
             envPipe.once('error', resolve);
           })
         : Promise.resolve();
-      const code = await new Promise<number | null>((resolve) => {
-        child.once('exit', (exitCode) => resolve(exitCode));
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.once('exit', resolve);
+        child.once('error', (err) => {
+          reject(new Error(`step ${resolved.name} failed to start: ${err.message}`));
+        });
       });
       current = undefined;
+      if (terminating) return;
       await Promise.race([pipeDone, delay(200)]);
       envPipe?.destroy();
       const dump = Buffer.concat(chunks).toString('utf8');

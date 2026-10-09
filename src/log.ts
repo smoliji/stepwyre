@@ -13,9 +13,16 @@ export function colorEnabled(stream: { isTTY?: boolean }): boolean {
 export const paint = (format: Format, text: string): string =>
   colorEnabled(process.stderr) ? styleText(format, text) : text;
 
-const palette: Format[] = ['cyan', 'magenta', 'green', 'yellow', 'blue', 'red'];
+const palette = [
+  'cyan',
+  'magenta',
+  'green',
+  'yellow',
+  'blue',
+  'red',
+] as const satisfies readonly Format[];
 
-export function stepColor(step: string): Format {
+export function stepColor(step: string): (typeof palette)[number] {
   let hash = 0;
   for (const char of step) hash = (hash * 31 + char.codePointAt(0)!) >>> 0;
   return palette[hash % palette.length]!;

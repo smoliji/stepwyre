@@ -45,13 +45,10 @@ export function loadConfig(path: string): Config {
       throw new Error(`boot step '${name}' (${index}) must have a string 'script'`);
     }
 
-    if (item.lifecycle === undefined) {
-      item.lifecycle = 'oneoff';
-    }
-
-    if (item.lifecycle !== 'oneoff' && item.lifecycle !== 'keepalive') {
+    const lifecycle = item.lifecycle ?? 'oneoff';
+    if (lifecycle !== 'oneoff' && lifecycle !== 'keepalive') {
       throw new Error(
-        `boot step '${name}' (${index}) has invalid lifecycle '${String(item.lifecycle)}'`,
+        `boot step '${name}' (${index}) has invalid lifecycle '${String(lifecycle)}'`,
       );
     }
 
@@ -59,7 +56,7 @@ export function loadConfig(path: string): Config {
       throw new Error(`boot step '${name}' (${index}) has invalid logs '${String(item.logs)}'`);
     }
 
-    return item as BootStep;
+    return { ...item, lifecycle } as BootStep;
   });
 
   return { boot: steps };

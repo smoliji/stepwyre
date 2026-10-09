@@ -22,7 +22,7 @@ test('parses multiple actions in one chunk, ignores other input', () => {
 
 test('ignores drag/move and other buttons', () => {
   assert.deepEqual(parseMouse('\x1b[<32;5;5M'), []); // motion with button held
-  assert.deepEqual(parseMouse('\x1b[<2;5;5M'), []);  // right button
+  assert.deepEqual(parseMouse('\x1b[<2;5;5M'), []); // right button
 });
 
 test('does not match bracket text without the escape byte', () => {

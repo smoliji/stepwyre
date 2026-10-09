@@ -31,5 +31,8 @@ test('force-flushes a line exceeding MAX_LINE', () => {
 test('truncates a completed line exceeding MAX_LINE to the cap', () => {
   const splitter = new LineSplitter();
   const lines = splitter.push('x'.repeat(MAX_LINE + 100) + '\ny\n');
-  assert.deepEqual(lines.map((line) => line.length), [MAX_LINE, 1]);
+  assert.deepEqual(
+    lines.map((line) => line.length),
+    [MAX_LINE, 1],
+  );
 });

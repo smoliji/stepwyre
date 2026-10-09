@@ -5,9 +5,13 @@ import { colorEnabled } from './log.js';
 // brand copper is not in styleText's named palette — 256-color 208 is the closest
 const copper = (text: string): string => `\x1b[38;5;208m${text}\x1b[39m`;
 
-export function renderBanner(stepCount: number, paths: string[], colored: boolean): string {
+export function runDetail(stepCount: number, paths: readonly string[]): string {
   const steps = `${stepCount} ${stepCount === 1 ? 'step' : 'steps'}`;
-  const detail = ` · ${steps} · ${paths.join(' ')}`;
+  return ` · ${steps} · ${paths.join(' ')}`;
+}
+
+export function renderBanner(stepCount: number, paths: string[], colored: boolean): string {
+  const detail = runDetail(stepCount, paths);
   const stair = ['        ┌────●', '   ┌────┘', '●──┘'];
   const name = colored ? styleText('bold', 'stepwyre') : 'stepwyre';
   const info = colored ? `${name}${styleText('dim', detail)}` : `${name}${detail}`;

@@ -28,10 +28,8 @@ async function main(paths: string[]): Promise<void> {
       : new StreamSink(config.boot.map((step) => step.name));
   try {
     await runHarness(config, sink);
+  } finally {
     await sink.close();
-  } catch (err) {
-    await sink.close();
-    throw err;
   }
 }
 

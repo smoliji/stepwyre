@@ -17,7 +17,7 @@ function severityOf(level: unknown): Severity {
   return 'info';
 }
 
-export function parseJsonLog(line: string): JsonLog | undefined {
+export function parseJsonObject(line: string): Record<string, unknown> | undefined {
   const trimmed = line.trim();
   if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return undefined;
   let value: unknown;
@@ -27,12 +27,17 @@ export function parseJsonLog(line: string): JsonLog | undefined {
     return undefined;
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
+  return value as Record<string, unknown>;
+}
+
+export function parseJsonLog(line: string): JsonLog | undefined {
+  const record = parseJsonObject(line);
+  if (!record) return undefined;
   const message =
     typeof record.msg === 'string'
       ? record.msg
       : typeof record.message === 'string'
         ? record.message
-        : JSON.stringify(value);
-  return { message, severity: severityOf(record.level), pretty: JSON.stringify(value, null, 2) };
+        : JSON.stringify(record);
+  return { message, severity: severityOf(record.level), pretty: JSON.stringify(record, null, 2) };
 }

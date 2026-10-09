@@ -1,9 +1,10 @@
+import type { LogEvent } from '../events.js';
 import type { JsonLog } from '../jsonLog.js';
 
 export interface ViewEntry {
   id: number;
   step: string;
-  stream: 'stdout' | 'stderr' | 'system';
+  stream: LogEvent['stream'];
   raw: string;
   json?: JsonLog;
 }

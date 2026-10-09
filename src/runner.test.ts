@@ -11,7 +11,7 @@ const run = promisify(execFile);
 test('non-TTY run prefixes child output and reports lifecycle events', async () => {
   const { stdout, stderr } = await run(
     process.execPath,
-    ['--import', 'tsx', 'src/index.ts', 'examples/harness.yaml'],
+    ['--import', 'tsx', 'src/index.ts', 'examples/stepwyre.yaml'],
     { env: { ...process.env, NO_COLOR: '1' }, timeout: 30000 },
   );
   assert.match(stdout, /db_tunnel\s+\| db_tunnel listening on \d+/);
@@ -31,7 +31,16 @@ test('a oneoff whose last command fails aborts the boot with its exit code', asy
   try {
     const cfgPath = await configFile(
       dir,
-      ['boot:', '  - name: bad', '    script: |', '      echo starting', '      false', '  - name: never', '    script: echo unreachable', ''].join('\n'),
+      [
+        'boot:',
+        '  - name: bad',
+        '    script: |',
+        '      echo starting',
+        '      false',
+        '  - name: never',
+        '    script: echo unreachable',
+        '',
+      ].join('\n'),
     );
     const result = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
       env: { ...process.env, NO_COLOR: '1' },
@@ -41,6 +50,82 @@ test('a oneoff whose last command fails aborts the boot with its exit code', asy
     assert.equal(result.code, 1);
     assert.match(result.stderr, /step bad failed with code 1/);
     assert.doesNotMatch(result.stdout, /unreachable/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a oneoff killed by a signal fails the boot with code null', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-signal-'));
+  try {
+    const cfgPath = await configFile(dir, 'boot:\n  - name: doomed\n    script: kill -TERM $$\n');
+    const result = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
+      env: { ...process.env, NO_COLOR: '1' },
+      timeout: 30000,
+    }).catch((err: Error & { code?: number; stderr: string }) => err);
+    assert.ok(result instanceof Error, 'harness should exit non-zero');
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /step doomed failed with code null/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('captured env round-trips newline and equals values and drops the exit marker', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-env-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: exporter',
+        '    script: |',
+        "      export MULTI=$'a\\nb'",
+        "      export WITHEQ='x=y'",
+        '  - name: reader',
+        '    script: |',
+        '      test "$MULTI" = $\'a\\nb\' && echo multi-ok',
+        '      echo "eq=$WITHEQ"',
+        "      env | grep -q '^__harness_exit=' || echo clean-env",
+        '',
+      ].join('\n'),
+    );
+    const { stdout } = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
+      env: { ...process.env, NO_COLOR: '1' },
+      timeout: 30000,
+    });
+    assert.match(stdout, /multi-ok/);
+    assert.match(stdout, /eq=x=y/);
+    assert.match(stdout, /clean-env/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a backgrounded grandchild holding fd 3 does not stall the boot', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-fd3-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: bg',
+        '    script: |',
+        '      sleep 5 >&3 2>/dev/null &',
+        '      echo bg-started',
+        '  - name: after',
+        '    script: echo done',
+        '',
+      ].join('\n'),
+    );
+    const started = Date.now();
+    const { stdout } = await run(process.execPath, ['--import', 'tsx', 'src/index.ts', cfgPath], {
+      env: { ...process.env, NO_COLOR: '1' },
+      timeout: 30000,
+    });
+    assert.ok(Date.now() - started < 4000, 'boot should not wait for the grandchild');
+    assert.match(stdout, /bg-started/);
+    assert.match(stdout, /done/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -117,10 +202,39 @@ test('nested harness envelopes compose step names in the outer sink', async () =
       .trimEnd()
       .split('\n')
       .map((line) => JSON.parse(line) as Record<string, unknown>);
-    const tick = envelopes.find((candidate) => candidate.step === 'sub/app' && candidate.json === true);
+    const tick = envelopes.find(
+      (candidate) => candidate.step === 'sub/app' && candidate.json === true,
+    );
     assert.ok(tick, 'expected a json-flagged envelope from the nested step');
     assert.equal(tick.line, '{"level":30,"msg":"tick one"}');
     assert.ok(envelopes.every((candidate) => candidate['@log'] === 1));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a keepalive dying mid-run is reported without failing the boot', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'harness-keepalive-exit-'));
+  try {
+    const cfgPath = await configFile(
+      dir,
+      [
+        'boot:',
+        '  - name: keep',
+        '    lifecycle: keepalive',
+        '    script: exit 1',
+        '  - name: after',
+        '    script: echo alive',
+        '',
+      ].join('\n'),
+    );
+    const { stdout, stderr } = await run(
+      process.execPath,
+      ['--import', 'tsx', 'src/index.ts', cfgPath],
+      { env: { ...process.env, NO_COLOR: '1' }, timeout: 30000 },
+    );
+    assert.match(stdout, /alive/);
+    assert.match(stderr, /keepalive keep exited/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

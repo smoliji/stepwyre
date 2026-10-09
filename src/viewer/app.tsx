@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import process from 'node:process';
 import { Box, Text, render, useInput, useStdout } from 'ink';
+import { runDetail } from '../banner.js';
 import type { LogEvent } from '../events.js';
 import type { Sink } from '../sink.js';
 import { stepColor } from '../log.js';
 import { layout, type ViewEntry } from './layout.js';
+import { appendCapped, pruneExpanded } from './buffer.js';
 import { clamp, scrollBy, type ScrollState } from './scroll.js';
 import { MOUSE_DISABLE, MOUSE_ENABLE, parseMouse } from './mouse.js';
-import { dumpLines } from './dump.js';
+import { dumpLines, expandMarker } from './dump.js';
 
 const BUFFER_CAP = 10000;
 const FLUSH_MS = 50;
@@ -51,16 +53,7 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
   const view = clamp(scroll, rows.length, viewHeight);
   const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
 
-  const live = useRef({
-    rows,
-    scrollTop: view.scrollTop,
-    byId,
-    height: viewHeight,
-    width: size.width,
-    expanded,
-    paused,
-  });
-  live.current = {
+  const snapshot = {
     rows,
     scrollTop: view.scrollTop,
     byId,
@@ -69,6 +62,8 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
     expanded,
     paused,
   };
+  const live = useRef(snapshot);
+  live.current = snapshot;
 
   useEffect(() => {
     feed.deliver = (events) => {
@@ -81,28 +76,14 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
     const timer = setInterval(() => {
       if (pending.current.length === 0 || live.current.paused) return;
       const fresh = pending.current.splice(0).map((event) => toEntry(event, nextId.current++));
-      const merged = [...entriesRef.current, ...fresh];
-      const dropped = merged.length > BUFFER_CAP ? merged.slice(0, merged.length - BUFFER_CAP) : [];
-      const next = dropped.length > 0 ? merged.slice(-BUFFER_CAP) : merged;
+      const { next, dropped } = appendCapped(entriesRef.current, fresh, BUFFER_CAP);
       entriesRef.current = next;
       setEntries(next);
 
       if (dropped.length === 0) return;
       const droppedIds = new Set(dropped.map((entry) => entry.id));
       const expandedAtDrop = live.current.expanded;
-      setExpanded((current) => {
-        let changed = false;
-        for (const id of droppedIds) {
-          if (current.has(id)) {
-            changed = true;
-            break;
-          }
-        }
-        if (!changed) return current;
-        const pruned = new Set(current);
-        for (const id of droppedIds) pruned.delete(id);
-        return pruned;
-      });
+      setExpanded((current) => pruneExpanded(current, droppedIds));
       const droppedRows = layout(dropped, expandedAtDrop, live.current.width).length;
       setScroll((current) =>
         current.follow
@@ -157,6 +138,7 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
   }, []);
 
   useInput((input, key) => {
+    // SGR mouse reports leak through ink's input stream — the raw stdin listener parses them; ink must not treat them as keys
     if (input.includes('[<')) return;
     if (key.ctrl && input === 'c') {
       process.kill(process.pid, 'SIGINT');
@@ -169,7 +151,8 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
     else if (key.pageUp) setScroll((current) => scrollBy(current, -page, rows.length, viewHeight));
     else if (key.pageDown) setScroll((current) => scrollBy(current, page, rows.length, viewHeight));
     else if (input === 'g' || key.home) setScroll({ scrollTop: 0, follow: false });
-    else if (input === 'G' || key.end) setScroll({ scrollTop: Number.MAX_SAFE_INTEGER, follow: true });
+    else if (input === 'G' || key.end)
+      setScroll({ scrollTop: Number.MAX_SAFE_INTEGER, follow: true });
   });
 
   const pad = useMemo(
@@ -179,14 +162,12 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
   const visible = rows.slice(view.scrollTop, view.scrollTop + viewHeight);
   feed.lastFrame = dumpLines(visible, byId, expanded, pad);
 
-  const stepsLabel = `${meta.stepCount} ${meta.stepCount === 1 ? 'step' : 'steps'}`;
-
   return (
     <Box flexDirection="column" width={size.width} height={size.height}>
       <Text wrap="truncate">
         <Text color={COPPER}>{'▂▄▆ '}</Text>
         <Text bold>stepwyre</Text>
-        <Text dimColor>{` · ${stepsLabel} · ${meta.paths.join(' ')}`}</Text>
+        <Text dimColor>{runDetail(meta.stepCount, meta.paths)}</Text>
       </Text>
       {visible.map((row, index) => {
         const entry = byId.get(row.entryId);
@@ -207,10 +188,10 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
               : entry.stream === 'stderr' && !entry.json
                 ? 'red'
                 : undefined;
-        const arrow = entry.json ? (expanded.has(entry.id) ? '▾ ' : '▸ ') : '';
+        const arrow = expandMarker(entry, expanded);
         return (
           <Text key={index} wrap="truncate">
-            <Text color={stepColor(entry.step) as string}>{entry.step.padEnd(pad)}</Text>
+            <Text color={stepColor(entry.step)}>{entry.step.padEnd(pad)}</Text>
             <Text
               color={color}
               dimColor={entry.stream === 'system' || (entry.stream === 'stderr' && !entry.json)}
@@ -237,18 +218,21 @@ export function createInkSink(meta: RunMeta): Sink {
     exitOnCtrlC: false,
     patchConsole: false,
   });
+  let closing: Promise<void> | undefined;
   return {
     event(event: LogEvent): void {
       if (feed.deliver) feed.deliver([event]);
       else feed.backlog.push(event);
     },
-    async close(): Promise<void> {
-      process.stdout.write(MOUSE_DISABLE);
-      instance.unmount();
-      await instance.waitUntilExit();
-      if (feed.lastFrame && feed.lastFrame.length > 0) {
-        process.stderr.write(feed.lastFrame.join('\n') + '\n');
-      }
+    close(): Promise<void> {
+      return (closing ??= (async () => {
+        process.stdout.write(MOUSE_DISABLE);
+        instance.unmount();
+        await instance.waitUntilExit();
+        if (feed.lastFrame && feed.lastFrame.length > 0) {
+          process.stderr.write(feed.lastFrame.join('\n') + '\n');
+        }
+      })());
     },
   };
 }
