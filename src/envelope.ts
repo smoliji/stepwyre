@@ -1,5 +1,5 @@
 import { EVENT_KINDS, type EventKind, type LogEvent } from './events.js';
-import { parseJsonObject } from './jsonLog.js';
+import { parseJsonLog, parseJsonObject } from './jsonLog.js';
 
 const MARKER = '@log';
 
@@ -64,4 +64,24 @@ export function parseEnvelope(line: string): Envelope | undefined {
   if (isProps(record.props)) parsed.props = record.props;
   if (isCode(record.code)) parsed.code = record.code;
   return parsed;
+}
+
+/** The event an envelope carried; `prefix` composes nested step names. */
+export function toEvent(wrapped: Envelope, prefix?: string): LogEvent {
+  const compose = (name: string) => (prefix ? `${prefix}/${name}` : name);
+  const event: LogEvent = {
+    step: compose(wrapped.step),
+    stream: wrapped.stream,
+    line: wrapped.line,
+    ts: wrapped.ts,
+  };
+  if (wrapped.json) {
+    const json = parseJsonLog(wrapped.line);
+    if (json) event.json = json;
+  }
+  if (wrapped.kind) event.kind = wrapped.kind;
+  if (wrapped.subject !== undefined) event.subject = compose(wrapped.subject);
+  if (wrapped.props) event.props = wrapped.props;
+  if (wrapped.code !== undefined) event.code = wrapped.code;
+  return event;
 }

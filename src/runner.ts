@@ -6,7 +6,7 @@ import type { Config } from './config.js';
 import { resolveStep, type ResolvedStep, type Registry } from './expand.js';
 import { LineSplitter, MAX_LINE, type EventKind, type LogEvent } from './events.js';
 import { parseJsonLog } from './jsonLog.js';
-import { parseEnvelope } from './envelope.js';
+import { parseEnvelope, toEvent } from './envelope.js';
 import type { Sink } from './sink.js';
 
 function initialEnv(): Record<string, string> {
@@ -41,21 +41,7 @@ function attachOutput(
       // names compose with ours (userapi/start) and json records survive
       const wrapped = parseEnvelope(line);
       if (wrapped) {
-        const event: LogEvent = {
-          step: `${step.name}/${wrapped.step}`,
-          stream: wrapped.stream,
-          line: wrapped.line,
-          ts: wrapped.ts,
-        };
-        if (wrapped.json) {
-          const json = parseJsonLog(wrapped.line);
-          if (json) event.json = json;
-        }
-        if (wrapped.kind) event.kind = wrapped.kind;
-        if (wrapped.subject !== undefined) event.subject = `${step.name}/${wrapped.subject}`;
-        if (wrapped.props) event.props = wrapped.props;
-        if (wrapped.code !== undefined) event.code = wrapped.code;
-        sink.event(event);
+        sink.event(toEvent(wrapped, step.name));
         if (wrapped.kind === 'boot' && wrapped.step === 'stepwyre') onNestedBoot?.();
         return;
       }

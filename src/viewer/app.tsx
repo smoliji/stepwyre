@@ -18,7 +18,11 @@ const HEADER_ROWS = 2;
 const COPPER = '#E68A4D';
 
 export interface RunMeta {
+  /** config files, or the log file in view mode */
   paths: string[];
+  /** the run's pid; unknown when viewing a bare log file */
+  pid?: number;
+  view?: boolean;
 }
 
 const PHASE_COLOR: Record<Phase, string | undefined> = {
@@ -56,7 +60,7 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
   const measure = () => ({ width: stdout.columns || 80, height: stdout.rows || 24 });
   const [size, setSize] = useState(measure);
   const [paused, setPaused] = useState(false);
-  const [run, setRun] = useState<RunState>(() => initialState(meta.paths));
+  const [run, setRun] = useState<RunState>(() => initialState(meta.paths, meta.pid ?? 0));
   const nextId = useRef(1);
   const pending = useRef<LogEvent[]>([]);
   const entriesRef = useRef(entries);
@@ -186,9 +190,9 @@ function App({ feed, meta }: { feed: Feed; meta: RunMeta }) {
       <Text wrap="truncate">
         <Text color={COPPER}>{'▂▄▆ '}</Text>
         <Text bold>stepwyre</Text>
-        <Text dimColor>{' · '}</Text>
+        <Text dimColor>{meta.view ? ' · view · ' : ' · '}</Text>
         <Text color={PHASE_COLOR[run.phase]}>{phaseLabel(run)}</Text>
-        <Text dimColor>{` · pid ${run.pid} · ${meta.paths.join(' ')}`}</Text>
+        <Text dimColor>{`${meta.pid ? ` · pid ${meta.pid}` : ''} · ${meta.paths.join(' ')}`}</Text>
       </Text>
       <Text wrap="truncate">
         {services(run).map((service) => (

@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The viewer header shows the run phase, the pid, and every keepalive step
   with its status and port
 - `failure` in the state file names the step that ended the run early
+- `stepwyre view [<log.ndjson> | <pid>]` attaches the viewer to a running or
+  finished run through its `--log` file; without an argument it lists live
+  runs. Runs with `--log` or `--state` register in `~/.stepwyre/runs`.
 
 ### Changed
 

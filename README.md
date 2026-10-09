@@ -59,6 +59,7 @@ demo: `stepwyre examples/tui-demo.yaml`.
   document with the phase and the resolved props of every step. `--log <file>`
   writes the NDJSON beside the viewer. A nested stepwyre composes into its
   parent. This is how an agent drives a run and finds the ports.
+- `stepwyre view <pid>` attaches the viewer to a run someone else started.
 - Runtime dependencies: Node builtins, plus `ink` and `react` for the viewer.
 
 ## Documentation

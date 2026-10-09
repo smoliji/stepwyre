@@ -24,6 +24,26 @@ step.
 
 The header is the same projection as the [state file](state.md).
 
+## Attach to a run
+
+`stepwyre view` opens the viewer on a run that another process started, such
+as an agent. The run must write its log with `--log`:
+
+```
+stepwyre view                     # live runs: pid, start, configs, log
+stepwyre view 48213               # follow that run's log
+stepwyre view /tmp/run/log.ndjson # follow a log file directly
+```
+
+The viewer replays the log, then follows it like `tail -f`. The header shows
+`view` and the phase from the log. Ctrl+C closes the viewer only; the run
+keeps going. After the run ends, the final screen stays until Ctrl+C. Piped
+output prints the log in the docker-compose style and exits when the run ends.
+
+Runs with `--log` or `--state` register in `~/.stepwyre/runs/<pid>.json` for
+the pid lookup (`STEPWYRE_RUNS` moves the directory). The record goes away
+when the run exits; a record of a dead pid is dropped on the next listing.
+
 ## Keybindings
 
 - Scroll with the mouse wheel or the arrow keys. When you scroll up, auto-follow

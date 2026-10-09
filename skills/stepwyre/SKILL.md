@@ -50,10 +50,10 @@ boot:
 
 ```bash
 RUN=/tmp/stepwyre/<name>; mkdir -p $RUN
-stepwyre --json --state $RUN/state.json cfg.yaml < /dev/null > $RUN/log.ndjson 2>&1 & echo $! > $RUN/pid
+stepwyre --json --log $RUN/log.ndjson --state $RUN/state.json cfg.yaml < /dev/null > /dev/null 2> $RUN/err & echo $! > $RUN/pid
 ```
 
-Use `run_in_background`. One directory per run; several runs can live side by side and connect through URLs in env. Then poll once a second:
+Use `run_in_background`. One directory per run; several runs can live side by side and connect through URLs in env. `--log` rather than redirecting `--json` so the user can watch the run in their own terminal with `stepwyre view $(cat $RUN/pid)`; tell them the pid or the directory. Then poll once a second:
 
 ```bash
 jq -r .phase $RUN/state.json      # booting | up | stopping | stopped | failed
@@ -80,7 +80,7 @@ Teardown:
 kill -TERM $(cat $RUN/pid)        # then poll .phase until stopped or failed
 ```
 
-Teardown SIGTERMs every child at once and waits up to `stop_timeout` each. A second SIGTERM kills at once. A dead pid with `phase: up` is a stale file from a run that was killed hard.
+Teardown SIGTERMs every child at once and waits up to `stop_timeout` each. A second SIGTERM kills at once. A dead pid with `phase: up` is a stale file from a run that was killed hard. `stepwyre view` lists the live runs that have `--log` or `--state`.
 
 ## A run the user started
 

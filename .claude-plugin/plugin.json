@@ -1,6 +1,6 @@
 {
   "name": "stepwyre",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Use stepwyre from an agent: write a boot config for a local stack, run it in the background with --json and --state, wait for it to be up, read ports, tear it down.",
   "author": {
     "name": "Jiří Šmolík",
