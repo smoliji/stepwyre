@@ -9,7 +9,7 @@
       "name": "Debug Development",
       "skipFiles": ["<node_internals>/**"],
       "program": "${workspaceFolder}/dist/harness.js",
-      "args": ["${workspaceFolder}/examples/harness.yaml"],
+      "args": ["${workspaceFolder}/examples/stepwyre.yaml"],
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
     }
