@@ -1,4 +1,10 @@
-import { DEFAULT_STOP_TIMEOUT, type BootStep, type Lifecycle, type Ready } from './config.js';
+import {
+  DEFAULT_STOP_TIMEOUT,
+  configDirs,
+  type BootStep,
+  type Lifecycle,
+  type Ready,
+} from './config.js';
 import { freePort } from './freePort.js';
 
 export interface ResolvedStep {
@@ -51,7 +57,7 @@ function splitTerms(token: string): string[] {
 }
 
 function addressable(term: string, registry: Registry): boolean {
-  if (term === 'FREE_PORT') return true;
+  if (term === 'FREE_PORT' || term === 'CONFIG_DIR') return true;
   const dot = term.indexOf('.');
   if (dot === -1) return false;
   const ref = term.slice(0, dot);
@@ -63,9 +69,13 @@ async function resolveTerm(
   self: Record<string, string>,
   registry: Registry,
   env: Record<string, string>,
+  configDir: string | undefined,
 ): Promise<string | undefined> {
   if (term === 'FREE_PORT') {
     return String(await freePort());
+  }
+  if (term === 'CONFIG_DIR') {
+    return configDir;
   }
 
   const dot = term.indexOf('.');
@@ -86,6 +96,7 @@ async function resolveToken(
   self: Record<string, string>,
   registry: Registry,
   env: Record<string, string>,
+  configDir: string | undefined,
 ): Promise<string> {
   const terms = splitTerms(token);
   let sawEmpty = false;
@@ -97,7 +108,7 @@ async function resolveToken(
       continue;
     }
 
-    const value = await resolveTerm(term, self, registry, env);
+    const value = await resolveTerm(term, self, registry, env, configDir);
     if (value !== undefined && value !== '') {
       return value;
     }
@@ -119,6 +130,7 @@ async function expand(
   self: Record<string, string>,
   registry: Registry,
   env: Record<string, string>,
+  configDir: string | undefined,
 ): Promise<string> {
   let result = '';
   let cursor = 0;
@@ -135,7 +147,7 @@ async function expand(
       break;
     }
     const token = value.slice(start + 2, end);
-    result += await resolveToken(token, self, registry, env);
+    result += await resolveToken(token, self, registry, env, configDir);
     cursor = end + 1;
   }
   return result;
@@ -147,13 +159,14 @@ export async function resolveStep(
   env: Record<string, string>,
 ): Promise<ResolvedStep> {
   const self: Record<string, string> = {};
+  const configDir = configDirs.get(step);
   for (const key of Object.keys(step)) {
     if (key === 'ready' || key === 'stop_timeout') continue;
-    self[key] = await expand(String(step[key]), self, registry, env);
+    self[key] = await expand(String(step[key]), self, registry, env, configDir);
   }
   const ready =
     step.ready && 'script' in step.ready
-      ? { ...step.ready, script: await expand(step.ready.script, self, registry, env) }
+      ? { ...step.ready, script: await expand(step.ready.script, self, registry, env, configDir) }
       : step.ready;
   return {
     name: self.name!,

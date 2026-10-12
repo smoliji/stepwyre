@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveStep, type Registry } from './expand.js';
+import { configDirs } from './config.js';
 
 const noRegistry: Registry = {};
 const noEnv: Record<string, string> = {};
@@ -91,4 +92,15 @@ test('concatenates tokens and literal text', async () => {
   };
   const resolved = await resolveStep(step, registry, noEnv);
   assert.equal(resolved.script, 'psql localhost:5432/app');
+});
+
+test('CONFIG_DIR is the directory of the file the step came from', async () => {
+  const step = { name: 'a', script: 'stepwyre ${CONFIG_DIR}/b.yaml', lifecycle: 'oneoff' as const };
+  configDirs.set(step, '/cfg');
+  const resolved = await resolveStep(step, {}, {});
+  assert.equal(resolved.script, 'stepwyre /cfg/b.yaml');
+  await assert.rejects(
+    resolveStep({ ...step, script: '${CONFIG_DIR}' }, {}, {}),
+    /unresolved token 'CONFIG_DIR'/,
+  );
 });

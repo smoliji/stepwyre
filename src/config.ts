@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { parseYaml } from './yaml.js';
 
 export type Lifecycle = 'oneoff' | 'keepalive';
@@ -18,6 +19,9 @@ export interface BootStep {
 export interface Config {
   boot: BootStep[];
 }
+
+/** directory of the file each step came from, for `${CONFIG_DIR}` */
+export const configDirs = new WeakMap<BootStep, string>();
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -104,7 +108,11 @@ export function loadConfig(path: string): Config {
 }
 
 export function loadConfigs(paths: string[]): Config {
-  const steps = paths.flatMap((path) => loadConfig(path).boot);
+  const steps = paths.flatMap((path) => {
+    const { boot } = loadConfig(path);
+    for (const step of boot) configDirs.set(step, dirname(resolve(path)));
+    return boot;
+  });
   const seen = new Set<string>();
   for (const step of steps) {
     if (seen.has(step.name)) {

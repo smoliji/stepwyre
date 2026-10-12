@@ -11,8 +11,8 @@ argument-hint: "[config.yaml ...]"
 allocation, env passing between steps, background services with ready probes,
 and a machine-readable state. Full docs are in `docs/` next to this plugin
 (`config.md`, `json-output.md`, `state.md`). The binary is `stepwyre` on
-PATH; it is not on npm yet, so it comes from `pnpm build && pnpm link --global`
-in a checkout of github.com/smoliji/stepwyre.
+PATH; it is not on npm yet: `pnpm add -g github:smoliji/stepwyre` installs it
+from the repo (builds on install).
 
 ## Config essentials
 
@@ -39,7 +39,7 @@ boot:
     script: pnpm start
 ```
 
-- `${FREE_PORT}` fresh port per occurrence; `${step.prop}` earlier step; `${prop}` same step; `${ENV.X}` environment; `${A ?? B ?? 'literal'}` fallback chain.
+- `${FREE_PORT}` fresh port per occurrence; `${step.prop}` earlier step; `${prop}` same step; `${ENV.X}` environment; `${CONFIG_DIR}` directory of this file; `${A ?? B ?? 'literal'}` fallback chain.
 - `${...}` is stepwyre's namespace: inside scripts use `$VAR`, never `${VAR}`.
 - A oneoff whose last command fails ends the boot. Steps get `CI=true` and no stdin.
 - After the last step: `boot complete`. The run then lives while a keepalive lives; a keepalive that exits ends the run.

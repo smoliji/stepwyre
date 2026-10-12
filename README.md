@@ -36,12 +36,14 @@ them to exit.
 
 ## Install and run
 
-You need Node 22 or later, and pnpm. The package is not on npm yet.
+You need Node 22 or later, and pnpm. The package is not on npm yet; install
+it from the repo, or link a checkout while developing it.
 
 ```
-pnpm install && pnpm build
-pnpm link --global          # puts `stepwyre` on PATH
+pnpm add -g github:smoliji/stepwyre      # builds on install
 stepwyre examples/stepwyre.yaml
+
+pnpm install && pnpm build && pnpm link --global   # from a checkout
 ```
 
 Several files form one run: `stepwyre infra.yaml app.yaml`. The log viewer
@@ -51,8 +53,8 @@ demo: `stepwyre examples/tui-demo.yaml`.
 
 - Steps are `oneoff` or `keepalive`. The run lives while a keepalive step
   lives. A `ready` probe holds the boot until the service answers.
-- `${FREE_PORT}`, `${step.prop}`, `${ENV.PORT ?? FREE_PORT}` expand in any
-  prop. The environment a oneoff step exports flows into the steps that follow.
+- `${FREE_PORT}`, `${step.prop}`, `${ENV.PORT ?? FREE_PORT}`, `${CONFIG_DIR}`
+  expand in any prop. The environment a oneoff step exports flows into the steps that follow.
 - The viewer collapses JSON logs to their message and can be paused for
   copying. Piped output uses the docker-compose style.
 - `--json` prints every event as NDJSON. `--state <file>` keeps a JSON

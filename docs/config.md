@@ -73,6 +73,8 @@ failed step, stepwyre stops all keepalive children before it exits.
 stepwyre expands values from left to right, key by key, in insertion order:
 
 - `${FREE_PORT}` allocates a fresh free TCP port. Each occurrence gets its own port.
+- `${CONFIG_DIR}` is the absolute directory of the file the step is in, for
+  files that travel with the config: `stepwyre ${CONFIG_DIR}/userapi.yaml`.
 - `${REF.prop}` reads a prop from an earlier step (a cross-step reference).
 - `${prop}` reads a prop that resolved earlier in the same step.
 - `${ENV.NAME}` reads an environment variable. It sees the exports from previous
