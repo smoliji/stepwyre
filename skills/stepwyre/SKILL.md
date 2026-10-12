@@ -11,8 +11,8 @@ argument-hint: "[config.yaml ...]"
 allocation, env passing between steps, background services with ready probes,
 and a machine-readable state. Full docs are in `docs/` next to this plugin
 (`config.md`, `json-output.md`, `state.md`). The binary is `stepwyre` on
-PATH; it is not on npm yet: `pnpm add -g github:smoliji/stepwyre` installs it
-from the repo (builds on install).
+PATH; it is not on npm yet: `pnpm add -g --allow-build=stepwyre github:smoliji/stepwyre`
+installs it from the repo (builds on install).
 
 ## Config essentials
 

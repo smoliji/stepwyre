@@ -40,7 +40,7 @@ You need Node 22 or later, and pnpm. The package is not on npm yet; install
 it from the repo, or link a checkout while developing it.
 
 ```
-pnpm add -g github:smoliji/stepwyre      # builds on install
+pnpm add -g --allow-build=stepwyre github:smoliji/stepwyre   # builds on install
 stepwyre examples/stepwyre.yaml
 
 pnpm install && pnpm build && pnpm link --global   # from a checkout

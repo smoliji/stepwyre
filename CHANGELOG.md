@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `failure` in the state file names the step that ended the run early
 - `${CONFIG_DIR}` expands to the directory of the config file, so a config
   can reference the files next to it
-- `prepare` builds on install, so `pnpm add -g github:smoliji/stepwyre` works
+- `prepare` builds on install, so `pnpm add -g --allow-build=stepwyre github:smoliji/stepwyre` works
 - `stepwyre view [<log.ndjson> | <pid>]` attaches the viewer to a running or
   finished run through its `--log` file; without an argument it lists live
   runs. Runs with `--log` or `--state` register in `~/.stepwyre/runs`.
